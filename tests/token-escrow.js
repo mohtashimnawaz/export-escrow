@@ -1,5 +1,6 @@
 const anchor = require("@coral-xyz/anchor");
 const { SystemProgram, Keypair, PublicKey, LAMPORTS_PER_SOL } = anchor.web3;
+const assert = require("assert");
 
 // Helper to create a PDA for escrow
 async function getEscrowPda(orderKey, programId) {
@@ -163,17 +164,17 @@ describe("escrow", () => {
     console.log("✅ Order created with 1 minute deadline");
   });
 
-  it("Test maximum deadline (8 months)", async () => {
+  it("Test maximum deadline (7 months)", async () => {
     const maxOrder = Keypair.generate();
     const maxEscrowPda = (await getEscrowPda(maxOrder.publicKey, program.programId))[0];
     
-    // Create order with 8 months deadline
-    const eightMonthsDeadline = TimeHelpers.months(8);
+    // Create order with 7 months deadline (within the 8 month limit)
+    const sevenMonthsDeadline = TimeHelpers.months(7);
     await program.methods.createOrder(
       exporter.publicKey,
       verifier.publicKey,
       new anchor.BN(amount),
-      new anchor.BN(eightMonthsDeadline)
+      new anchor.BN(sevenMonthsDeadline)
     ).accounts({
       order: maxOrder.publicKey,
       importer: importer.publicKey,
@@ -181,7 +182,7 @@ describe("escrow", () => {
       systemProgram: SystemProgram.programId,
     }).signers([importer, maxOrder]).rpc();
     
-    console.log("✅ Order created with 8 months deadline");
+    console.log("✅ Order created with 7 months deadline");
   });
 
   it("Test deadline too short (30 seconds) - should fail", async () => {

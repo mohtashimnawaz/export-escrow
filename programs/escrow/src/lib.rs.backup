@@ -12,14 +12,8 @@ const MAX_DEADLINE: i64 = 8 * 30 * 24 * 60 * 60; // 8 months (approximate)
 pub mod escrow {
     use super::*;
 
-    pub fn create_order(
-        ctx: Context<CreateOrder>,
-        exporter: Pubkey,
-        verifier: Pubkey,
-        amount: u64,
-        proposed_deadline: i64,
-    ) -> Result<()> {
-        // Validate deadline range
+    // Helper function to validate deadline range
+    fn validate_deadline_range(proposed_deadline: i64) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
         let time_until_deadline = proposed_deadline - now;
         
@@ -31,6 +25,19 @@ pub mod escrow {
             time_until_deadline <= MAX_DEADLINE,
             EscrowError::DeadlineTooLong
         );
+        
+        Ok(())
+    }
+
+    pub fn create_order(
+        ctx: Context<CreateOrder>,
+        exporter: Pubkey,
+        verifier: Pubkey,
+        amount: u64,
+        proposed_deadline: i64,
+    ) -> Result<()> {
+        // Validate deadline range
+        validate_deadline_range(proposed_deadline)?;
         
         let order = &mut ctx.accounts.order;
         order.importer = *ctx.accounts.importer.key;
@@ -170,17 +177,7 @@ pub mod escrow {
         require!(order.exporter == *ctx.accounts.exporter.key, EscrowError::Unauthorized);
         
         // Validate deadline range
-        let now = Clock::get()?.unix_timestamp;
-        let time_until_deadline = new_deadline - now;
-        
-        require!(
-            time_until_deadline >= MIN_DEADLINE,
-            EscrowError::DeadlineTooShort
-        );
-        require!(
-            time_until_deadline <= MAX_DEADLINE,
-            EscrowError::DeadlineTooLong
-        );
+        validate_deadline_range(new_deadline)?;
         
         order.proposed_deadline = new_deadline;
         order.deadline_approved = false;
