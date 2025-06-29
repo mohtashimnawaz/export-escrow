@@ -18,10 +18,10 @@ pub mod escrow {
         verifier: Pubkey,
         amount: u64,
         proposed_deadline: i64,
+        creation_time: i64,
     ) -> Result<()> {
         // Validate deadline range
-        let now = Clock::get()?.unix_timestamp;
-        let time_until_deadline = proposed_deadline - now;
+        let time_until_deadline = proposed_deadline - creation_time;
         
         require!(
             time_until_deadline >= MIN_DEADLINE,
@@ -38,7 +38,7 @@ pub mod escrow {
         order.verifier = verifier;
         order.amount = amount;
         order.state = OrderState::PendingDeadlineApproval;
-        order.created_at = Clock::get()?.unix_timestamp;
+        order.created_at = creation_time;
         order.proposed_deadline = proposed_deadline;
         order.approved_deadline = 0; // Will be set when importer approves
         order.deadline_approved = false;
@@ -70,6 +70,10 @@ pub mod escrow {
         require!(order.exporter == *ctx.accounts.exporter.key, EscrowError::Unauthorized);
         require!(order.deadline_approved, EscrowError::DeadlineNotApproved);
         
+        // Check if deadline has passed
+        let now = Clock::get()?.unix_timestamp;
+        require!(now <= order.approved_deadline, EscrowError::DeadlinePassed);
+        
         order.bill_of_lading_hash = bill_of_lading_hash;
         order.state = OrderState::InTransit;
         Ok(())
@@ -81,14 +85,14 @@ pub mod escrow {
         // Only verifier or importer can confirm delivery
         let signer = ctx.accounts.signer.key;
         require!(signer == &order.verifier || signer == &order.importer, EscrowError::Unauthorized);
+        
+        // Check if deadline has passed
+        let now = Clock::get()?.unix_timestamp;
+        require!(now <= order.approved_deadline, EscrowError::DeadlinePassed);
+        
         order.state = OrderState::Delivered;
-        Ok(())
-    }
-
-    pub fn release_funds(ctx: Context<ReleaseFunds>) -> Result<()> {
-        let order = &mut ctx.accounts.order;
-        require!(order.state == OrderState::Delivered, EscrowError::InvalidState);
-        // Transfer SOL from escrow PDA to exporter using System Program
+        
+        // Automatically release funds to exporter when delivery is confirmed
         let amount = order.amount;
         let ix = system_instruction::transfer(
             ctx.accounts.escrow_pda.key,
@@ -114,16 +118,19 @@ pub mod escrow {
             signer,
         )?;
         order.state = OrderState::Completed;
+        
         Ok(())
     }
 
-    pub fn refund(ctx: Context<Refund>) -> Result<()> {
+    pub fn check_deadline_and_refund(ctx: Context<CheckDeadlineAndRefund>, current_time: i64) -> Result<()> {
         let order = &mut ctx.accounts.order;
         require!(order.state != OrderState::Completed, EscrowError::InvalidState);
         require!(order.deadline_approved, EscrowError::DeadlineNotApproved);
-        let now = Clock::get()?.unix_timestamp;
-        require!(now > order.approved_deadline, EscrowError::TooEarlyForRefund);
-        // Transfer SOL from escrow PDA back to importer using System Program
+        
+        // Use the current_time parameter from CLI to ensure consistency
+        require!(current_time > order.approved_deadline, EscrowError::TooEarlyForRefund);
+        
+        // Automatically refund to importer if deadline has passed and goods not delivered
         let amount = order.amount;
         let ix = system_instruction::transfer(
             ctx.accounts.escrow_pda.key,
@@ -149,17 +156,37 @@ pub mod escrow {
             signer,
         )?;
         order.state = OrderState::Refunded;
+        
+        // Debug: Print the values
+        msg!("Debug - Current time: {}", current_time);
+        msg!("Debug - Approved deadline: {}", order.approved_deadline);
+        msg!("Debug - Time difference: {}", current_time - order.approved_deadline);
+        
         Ok(())
     }
 
-    pub fn approve_deadline(ctx: Context<ApproveDeadline>) -> Result<()> {
+    pub fn approve_deadline(ctx: Context<ApproveDeadline>, current_time: i64) -> Result<()> {
         let order = &mut ctx.accounts.order;
         require!(order.state == OrderState::PendingDeadlineApproval, EscrowError::InvalidState);
         require!(order.importer == *ctx.accounts.importer.key, EscrowError::Unauthorized);
         
-        order.approved_deadline = order.proposed_deadline;
+        // The proposed_deadline is an absolute timestamp from the CLI (local time)
+        // We need to extract the duration and apply it from the approval time
+        let creation_time = order.created_at;
+        let proposed_duration = order.proposed_deadline - creation_time;
+        
+        // Set the approved deadline to start from now (approval time) with the same duration
+        // Use the current_time parameter from CLI to ensure consistency
+        order.approved_deadline = current_time + proposed_duration;
         order.deadline_approved = true;
         order.state = OrderState::PendingShipment;
+        
+        // Debug: Print the values (this will be in the transaction logs)
+        msg!("Debug - Creation time: {}", creation_time);
+        msg!("Debug - Proposed deadline: {}", order.proposed_deadline);
+        msg!("Debug - Proposed duration: {}", proposed_duration);
+        msg!("Debug - Approval time: {}", current_time);
+        msg!("Debug - Approved deadline: {}", order.approved_deadline);
         
         Ok(())
     }
@@ -217,12 +244,6 @@ pub struct ConfirmDelivery<'info> {
     #[account(mut)]
     pub order: Account<'info, Order>,
     pub signer: Signer<'info>, // Importer or verifier
-}
-
-#[derive(Accounts)]
-pub struct ReleaseFunds<'info> {
-    #[account(mut)]
-    pub order: Account<'info, Order>,
     /// CHECK: This is the escrow PDA
     #[account(
         mut,
@@ -237,7 +258,7 @@ pub struct ReleaseFunds<'info> {
 }
 
 #[derive(Accounts)]
-pub struct Refund<'info> {
+pub struct CheckDeadlineAndRefund<'info> {
     #[account(mut)]
     pub order: Account<'info, Order>,
     /// CHECK: This is the escrow PDA
@@ -312,4 +333,6 @@ pub enum EscrowError {
     DeadlineTooShort,
     #[msg("Deadline too long")] 
     DeadlineTooLong,
+    #[msg("Deadline passed")] 
+    DeadlinePassed,
 }
