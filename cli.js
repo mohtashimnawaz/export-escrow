@@ -354,6 +354,10 @@ async function viewOrderDetails(order) {
     console.log(`Proposed deadline: ${formatDeadline(orderAccount.proposedDeadline)}`);
     console.log(`Approved deadline: ${formatDeadline(orderAccount.approvedDeadline)}`);
     console.log(`Deadline approved: ${orderAccount.deadlineApproved}`);
+    console.log(`Extension requested: ${orderAccount.extensionRequested}`);
+    if (orderAccount.extensionRequested) {
+      console.log(`Extension deadline: ${formatDeadline(orderAccount.extensionDeadline)}`);
+    }
     console.log(`Current time: ${formatDeadline(localTime)}`);
     console.log(`Time until deadline: ${orderAccount.approvedDeadline - localTime} seconds`);
     
@@ -363,6 +367,11 @@ async function viewOrderDetails(order) {
       } else {
         console.log("⏰ Deadline is still active");
       }
+    }
+    
+    // Show extension status
+    if (orderAccount.extensionRequested) {
+      console.log("🔄 Extension request pending approval");
     }
   } catch (error) {
     console.log(`❌ Error fetching order details: ${error.message}`);
@@ -382,8 +391,11 @@ async function showMenu() {
   console.log("7. Check deadline and refund (if needed)");
   console.log("8. View order details");
   console.log("9. Show balances");
-  console.log("10. Run complete escrow flow");
-  console.log("11. Exit");
+  console.log("10. Request deadline extension (Exporter)");
+  console.log("11. Approve deadline extension (Importer)");
+  console.log("12. Reject deadline extension (Importer)");
+  console.log("13. Run complete escrow flow");
+  console.log("14. Exit");
   console.log("==================================================");
 }
 
@@ -416,6 +428,108 @@ async function runCompleteFlow() {
   await showBalances();
 }
 
+async function requestDeadlineExtension(order) {
+  console.log("⏰ Requesting deadline extension...");
+  
+  // Prompt for new deadline input
+  console.log("\nDeadline format examples:");
+  console.log("- 30 min or 30 minutes");
+  console.log("- 2 hour or 2 hours");
+  console.log("- 1 day or 1 days");
+  console.log("- 2 week or 2 weeks");
+  console.log("- 3 month or 3 months");
+  console.log("\nValid range: 1 minute to 8 months");
+  
+  let newDeadline;
+  while (true) {
+    try {
+      const deadlineInput = await question("Enter new deadline (e.g., '2 days'): ");
+      newDeadline = validateDeadlineInput(deadlineInput);
+      break;
+    } catch (error) {
+      console.log(`❌ Error: ${error.message}`);
+      console.log("Please try again.");
+    }
+  }
+  
+  try {
+    const currentTime = Math.floor(Date.now() / 1000);
+    
+    await program.methods.requestDeadlineExtension(new anchor.BN(newDeadline), new anchor.BN(currentTime))
+      .accounts({
+        order: order.publicKey,
+        exporter: exporter.publicKey,
+      })
+      .signers([exporter])
+      .rpc();
+    
+    console.log(`✅ Extension requested! New deadline: ${formatDeadline(newDeadline)}`);
+    console.log("⏳ Waiting for importer to approve extension...");
+  } catch (error) {
+    if (error.message.includes("ExtensionAlreadyRequested")) {
+      console.log("❌ Extension already requested. Wait for importer response.");
+    } else if (error.message.includes("DeadlinePassed")) {
+      console.log("❌ Cannot request extension: Current deadline has passed.");
+    } else if (error.message.includes("InvalidState")) {
+      console.log("❌ Invalid state: Order must be in PendingShipment or InTransit state.");
+    } else if (error.message.includes("DeadlineTooShort")) {
+      console.log("❌ New deadline must be after current approved deadline.");
+    } else {
+      console.log(`❌ Error: ${error.message}`);
+    }
+  }
+}
+
+async function approveDeadlineExtension(order) {
+  console.log("✅ Approving deadline extension...");
+  
+  try {
+    const currentTime = Math.floor(Date.now() / 1000);
+    
+    await program.methods.approveDeadlineExtension(new anchor.BN(currentTime))
+      .accounts({
+        order: order.publicKey,
+        importer: importer.publicKey,
+      })
+      .signers([importer])
+      .rpc();
+    
+    console.log("✅ Deadline extension approved!");
+  } catch (error) {
+    if (error.message.includes("ExtensionRequestNotFound")) {
+      console.log("❌ No extension request found.");
+    } else if (error.message.includes("InvalidState")) {
+      console.log("❌ Invalid state: Order must be in PendingExtensionApproval state.");
+    } else {
+      console.log(`❌ Error: ${error.message}`);
+    }
+  }
+}
+
+async function rejectDeadlineExtension(order) {
+  console.log("❌ Rejecting deadline extension...");
+  
+  try {
+    await program.methods.rejectDeadlineExtension()
+      .accounts({
+        order: order.publicKey,
+        importer: importer.publicKey,
+      })
+      .signers([importer])
+      .rpc();
+    
+    console.log("❌ Deadline extension rejected!");
+  } catch (error) {
+    if (error.message.includes("ExtensionRequestNotFound")) {
+      console.log("❌ No extension request found.");
+    } else if (error.message.includes("InvalidState")) {
+      console.log("❌ Invalid state: Order must be in PendingExtensionApproval state.");
+    } else {
+      console.log(`❌ Error: ${error.message}`);
+    }
+  }
+}
+
 async function main() {
   console.log("🚀 Starting Escrow Smart Contract Interface...");
   
@@ -424,7 +538,7 @@ async function main() {
   
   while (true) {
     await showMenu();
-    const choice = await question("Enter your choice (1-11): ");
+    const choice = await question("Enter your choice (1-14): ");
     
     try {
       switch (choice) {
@@ -478,9 +592,26 @@ async function main() {
           await showBalances();
           break;
         case "10":
-          await runCompleteFlow();
+          await requestDeadlineExtension(currentOrder);
           break;
         case "11":
+          if (!currentOrder) {
+            console.log("❌ No order created yet. Please create an order first.");
+            break;
+          }
+          await approveDeadlineExtension(currentOrder);
+          break;
+        case "12":
+          if (!currentOrder) {
+            console.log("❌ No order created yet. Please create an order first.");
+            break;
+          }
+          await rejectDeadlineExtension(currentOrder);
+          break;
+        case "13":
+          await runCompleteFlow();
+          break;
+        case "14":
           console.log("👋 Goodbye!");
           rl.close();
           return;

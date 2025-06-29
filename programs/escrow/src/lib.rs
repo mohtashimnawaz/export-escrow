@@ -42,6 +42,8 @@ pub mod escrow {
         order.proposed_deadline = proposed_deadline;
         order.approved_deadline = 0; // Will be set when importer approves
         order.deadline_approved = false;
+        order.extension_requested = false;
+        order.extension_deadline = 0;
         order.bill_of_lading_hash = [0u8; 32];
         
         // Transfer SOL from importer to escrow PDA
@@ -214,6 +216,86 @@ pub mod escrow {
         
         Ok(())
     }
+
+    pub fn request_deadline_extension(ctx: Context<RequestDeadlineExtension>, new_deadline: i64, current_time: i64) -> Result<()> {
+        let order = &mut ctx.accounts.order;
+        require!(order.state == OrderState::PendingShipment || order.state == OrderState::InTransit, EscrowError::InvalidState);
+        require!(order.exporter == *ctx.accounts.exporter.key, EscrowError::Unauthorized);
+        require!(!order.extension_requested, EscrowError::ExtensionAlreadyRequested);
+        
+        // Check if current deadline has passed
+        require!(current_time <= order.approved_deadline, EscrowError::DeadlinePassed);
+        
+        // Validate new deadline is in the future and within range
+        let time_until_new_deadline = new_deadline - current_time;
+        require!(
+            time_until_new_deadline >= MIN_DEADLINE,
+            EscrowError::DeadlineTooShort
+        );
+        require!(
+            time_until_new_deadline <= MAX_DEADLINE,
+            EscrowError::DeadlineTooLong
+        );
+        
+        // New deadline must be after current approved deadline
+        require!(new_deadline > order.approved_deadline, EscrowError::DeadlineTooShort);
+        
+        order.extension_requested = true;
+        order.extension_deadline = new_deadline;
+        order.state = OrderState::PendingExtensionApproval;
+        
+        // Debug: Print the values
+        msg!("Debug - Current approved deadline: {}", order.approved_deadline);
+        msg!("Debug - Requested extension deadline: {}", new_deadline);
+        msg!("Debug - Extension duration: {}", new_deadline - order.approved_deadline);
+        
+        Ok(())
+    }
+
+    pub fn approve_deadline_extension(ctx: Context<ApproveDeadlineExtension>, current_time: i64) -> Result<()> {
+        let order = &mut ctx.accounts.order;
+        require!(order.state == OrderState::PendingExtensionApproval, EscrowError::InvalidState);
+        require!(order.importer == *ctx.accounts.importer.key, EscrowError::Unauthorized);
+        require!(order.extension_requested, EscrowError::ExtensionRequestNotFound);
+        
+        // Update the approved deadline to the extension deadline
+        order.approved_deadline = order.extension_deadline;
+        order.extension_requested = false;
+        order.extension_deadline = 0;
+        
+        // Return to previous state (PendingShipment or InTransit)
+        if order.bill_of_lading_hash != [0u8; 32] {
+            order.state = OrderState::InTransit;
+        } else {
+            order.state = OrderState::PendingShipment;
+        }
+        
+        // Debug: Print the values
+        msg!("Debug - Extension approved at: {}", current_time);
+        msg!("Debug - New approved deadline: {}", order.approved_deadline);
+        
+        Ok(())
+    }
+
+    pub fn reject_deadline_extension(ctx: Context<RejectDeadlineExtension>) -> Result<()> {
+        let order = &mut ctx.accounts.order;
+        require!(order.state == OrderState::PendingExtensionApproval, EscrowError::InvalidState);
+        require!(order.importer == *ctx.accounts.importer.key, EscrowError::Unauthorized);
+        require!(order.extension_requested, EscrowError::ExtensionRequestNotFound);
+        
+        // Clear extension request
+        order.extension_requested = false;
+        order.extension_deadline = 0;
+        
+        // Return to previous state (PendingShipment or InTransit)
+        if order.bill_of_lading_hash != [0u8; 32] {
+            order.state = OrderState::InTransit;
+        } else {
+            order.state = OrderState::PendingShipment;
+        }
+        
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -290,6 +372,30 @@ pub struct ProposeNewDeadline<'info> {
     pub exporter: Signer<'info>,
 }
 
+#[derive(Accounts)]
+pub struct RequestDeadlineExtension<'info> {
+    #[account(mut)]
+    pub order: Account<'info, Order>,
+    #[account(mut)]
+    pub exporter: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct ApproveDeadlineExtension<'info> {
+    #[account(mut)]
+    pub order: Account<'info, Order>,
+    #[account(mut)]
+    pub importer: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct RejectDeadlineExtension<'info> {
+    #[account(mut)]
+    pub order: Account<'info, Order>,
+    #[account(mut)]
+    pub importer: Signer<'info>,
+}
+
 #[account]
 pub struct Order {
     pub importer: Pubkey,
@@ -301,17 +407,20 @@ pub struct Order {
     pub proposed_deadline: i64,  // Deadline proposed by exporter
     pub approved_deadline: i64,  // Final deadline after importer approval
     pub deadline_approved: bool, // Whether importer has approved the deadline
+    pub extension_requested: bool, // Whether an extension has been requested
+    pub extension_deadline: i64, // Proposed extension deadline
     pub bill_of_lading_hash: [u8; 32],
 }
 
 impl Order {
-    pub const LEN: usize = 32 + 32 + 32 + 8 + 1 + 8 + 8 + 8 + 1 + 32;
+    pub const LEN: usize = 32 + 32 + 32 + 8 + 1 + 8 + 8 + 8 + 1 + 1 + 8 + 32;
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
 pub enum OrderState {
     PendingDeadlineApproval,  // Waiting for importer to approve deadline
     PendingShipment,          // Deadline approved, waiting for shipment
+    PendingExtensionApproval, // Waiting for importer to approve deadline extension
     InTransit,
     Delivered,
     Completed,
@@ -335,4 +444,8 @@ pub enum EscrowError {
     DeadlineTooLong,
     #[msg("Deadline passed")] 
     DeadlinePassed,
+    #[msg("Extension request not found")] 
+    ExtensionRequestNotFound,
+    #[msg("Extension already requested")] 
+    ExtensionAlreadyRequested,
 }
