@@ -515,6 +515,152 @@ pub mod escrow {
         
         Ok(())
     }
+
+    pub fn partial_release_funds(ctx: Context<PartialReleaseFunds>, amount: u64) -> Result<()> {
+        let order = &mut ctx.accounts.order;
+        require!(order.state == OrderState::Delivered || order.state == OrderState::InTransit, EscrowError::InvalidState);
+        let remaining = order.amount - order.released_amount - order.refunded_amount;
+        require!(amount > 0 && amount <= remaining, EscrowError::InvalidPartialAmount);
+        // Only verifier or importer can release
+        let signer = ctx.accounts.signer.key;
+        require!(signer == &order.verifier || signer == &order.importer, EscrowError::Unauthorized);
+        // Transfer funds
+        match order.token_mint {
+            None => {
+                let ix = system_instruction::transfer(
+                    ctx.accounts.escrow_pda.key,
+                    ctx.accounts.exporter.key,
+                    amount,
+                );
+                let order_key = order.key();
+                let seeds = &[
+                    b"escrow_pda",
+                    order_key.as_ref(),
+                    &[ctx.bumps.escrow_pda],
+                ];
+                let signer = &[&seeds[..]];
+                invoke_signed(
+                    &ix,
+                    &[
+                        ctx.accounts.escrow_pda.to_account_info(),
+                        ctx.accounts.exporter.to_account_info(),
+                        ctx.accounts.system_program.to_account_info(),
+                    ],
+                    signer,
+                )?;
+            },
+            Some(_mint) => {
+                let cpi_accounts = token::Transfer {
+                    from: ctx.accounts.escrow_token_account.as_ref().unwrap().to_account_info(),
+                    to: ctx.accounts.exporter_token_account.as_ref().unwrap().to_account_info(),
+                    authority: ctx.accounts.escrow_pda.to_account_info(),
+                };
+                let order_key = order.key();
+                let seeds = &[
+                    b"escrow_pda",
+                    order_key.as_ref(),
+                    &[ctx.bumps.escrow_pda],
+                ];
+                let signer = &[&seeds[..]];
+                let cpi_ctx = CpiContext::new_with_signer(
+                    ctx.accounts.token_program.as_ref().unwrap().to_account_info(),
+                    cpi_accounts,
+                    signer,
+                );
+                token::transfer(cpi_ctx, amount)?;
+            }
+        }
+        order.released_amount += amount;
+        let now = Clock::get()?.unix_timestamp;
+        order.add_history_entry(
+            order.state.clone(),
+            format!("Partial release: {} units to exporter", amount),
+            now,
+        );
+        // If fully released, mark as completed
+        if order.released_amount + order.refunded_amount == order.amount {
+            order.state = OrderState::Completed;
+            order.add_history_entry(
+                OrderState::Completed,
+                "Order completed - all funds released/refunded".to_string(),
+                now,
+            );
+        }
+        Ok(())
+    }
+
+    pub fn partial_refund(ctx: Context<PartialRefund>, amount: u64, current_time: i64) -> Result<()> {
+        let order = &mut ctx.accounts.order;
+        require!(order.state != OrderState::Completed, EscrowError::InvalidState);
+        require!(order.deadline_approved, EscrowError::DeadlineNotApproved);
+        require!(current_time > order.approved_deadline, EscrowError::TooEarlyForRefund);
+        let remaining = order.amount - order.released_amount - order.refunded_amount;
+        require!(amount > 0 && amount <= remaining, EscrowError::InvalidPartialAmount);
+        // Only importer can refund
+        require!(order.importer == *ctx.accounts.importer.key, EscrowError::Unauthorized);
+        // Transfer funds
+        match order.token_mint {
+            None => {
+                let ix = system_instruction::transfer(
+                    ctx.accounts.escrow_pda.key,
+                    ctx.accounts.importer.key,
+                    amount,
+                );
+                let order_key = order.key();
+                let seeds = &[
+                    b"escrow_pda",
+                    order_key.as_ref(),
+                    &[ctx.bumps.escrow_pda],
+                ];
+                let signer = &[&seeds[..]];
+                invoke_signed(
+                    &ix,
+                    &[
+                        ctx.accounts.escrow_pda.to_account_info(),
+                        ctx.accounts.importer.to_account_info(),
+                        ctx.accounts.system_program.to_account_info(),
+                    ],
+                    signer,
+                )?;
+            },
+            Some(_mint) => {
+                let cpi_accounts = token::Transfer {
+                    from: ctx.accounts.escrow_token_account.as_ref().unwrap().to_account_info(),
+                    to: ctx.accounts.importer_token_account.as_ref().unwrap().to_account_info(),
+                    authority: ctx.accounts.escrow_pda.to_account_info(),
+                };
+                let order_key = order.key();
+                let seeds = &[
+                    b"escrow_pda",
+                    order_key.as_ref(),
+                    &[ctx.bumps.escrow_pda],
+                ];
+                let signer = &[&seeds[..]];
+                let cpi_ctx = CpiContext::new_with_signer(
+                    ctx.accounts.token_program.as_ref().unwrap().to_account_info(),
+                    cpi_accounts,
+                    signer,
+                );
+                token::transfer(cpi_ctx, amount)?;
+            }
+        }
+        order.refunded_amount += amount;
+        order.add_history_entry(
+            OrderState::Refunded,
+            format!("Partial refund: {} units to importer", amount),
+            current_time,
+        );
+        // If fully refunded/released, mark as refunded/completed
+        if order.released_amount + order.refunded_amount == order.amount {
+            order.state = if order.released_amount > 0 { OrderState::Completed } else { OrderState::Refunded };
+            order.add_history_entry(
+                order.state.clone(),
+                "Order completed - all funds released/refunded".to_string(),
+                current_time,
+            );
+        }
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -671,12 +817,61 @@ pub struct ResolveDispute<'info> {
     pub verifier: Signer<'info>,
 }
 
+#[derive(Accounts)]
+pub struct PartialReleaseFunds<'info> {
+    #[account(mut)]
+    pub order: Account<'info, Order>,
+    pub signer: Signer<'info>, // Importer or verifier
+    /// CHECK: This is the escrow PDA
+    #[account(
+        mut,
+        seeds = [b"escrow_pda", order.key().as_ref()],
+        bump
+    )]
+    pub escrow_pda: UncheckedAccount<'info>,
+    /// CHECK: Exporter account
+    #[account(mut)]
+    pub exporter: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+    // SPL token support
+    #[account(mut)]
+    pub escrow_token_account: Option<Account<'info, TokenAccount>>,
+    #[account(mut)]
+    pub exporter_token_account: Option<Account<'info, TokenAccount>>,
+    pub token_program: Option<Program<'info, Token>>,
+}
+
+#[derive(Accounts)]
+pub struct PartialRefund<'info> {
+    #[account(mut)]
+    pub order: Account<'info, Order>,
+    /// CHECK: This is the escrow PDA
+    #[account(
+        mut,
+        seeds = [b"escrow_pda", order.key().as_ref()],
+        bump
+    )]
+    pub escrow_pda: UncheckedAccount<'info>,
+    /// CHECK: Importer account
+    #[account(mut)]
+    pub importer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+    // SPL token support
+    #[account(mut)]
+    pub escrow_token_account: Option<Account<'info, TokenAccount>>,
+    #[account(mut)]
+    pub importer_token_account: Option<Account<'info, TokenAccount>>,
+    pub token_program: Option<Program<'info, Token>>,
+}
+
 #[account]
 pub struct Order {
     pub importer: Pubkey,
     pub exporter: Pubkey,
     pub verifier: Pubkey,
     pub amount: u64,
+    pub released_amount: u64, // Total released to exporter
+    pub refunded_amount: u64, // Total refunded to importer
     pub state: OrderState,
     pub created_at: i64,
     pub proposed_deadline: i64,  // Deadline proposed by exporter
@@ -692,7 +887,7 @@ pub struct Order {
 }
 
 impl Order {
-    pub const LEN: usize = 32 + 32 + 32 + 8 + 1 + 8 + 8 + 8 + 1 + 1 + 8 + 32 + 33 + 4 + (8 + 1 + 100) * 10 + 4 + 50 + 200 + 4 + (20 * 5) + 30 + 8;
+    pub const LEN: usize = 32 + 32 + 32 + 8 + 8 + 8 + 1 + 8 + 8 + 8 + 1 + 1 + 8 + 32 + 33 + 4 + (8 + 1 + 100) * 10 + 4 + 50 + 200 + 4 + (20 * 5) + 30 + 8;
     
     // Helper function to add history entry
     pub fn add_history_entry(&mut self, state: OrderState, description: String, timestamp: i64) {
@@ -753,4 +948,6 @@ pub enum EscrowError {
     ExtensionRequestNotFound,
     #[msg("Extension already requested")] 
     ExtensionAlreadyRequested,
+    #[msg("Invalid partial release/refund amount")] 
+    InvalidPartialAmount,
 }
