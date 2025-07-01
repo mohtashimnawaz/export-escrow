@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::system_instruction;
 use anchor_lang::solana_program::program::{invoke, invoke_signed};
+use anchor_spl::token::{self, Token, TokenAccount, Mint, Transfer};
 
 declare_id!("9KUNonirg79qR5SeSGdG49XfQ1DXKkB8GZEVzsakuZcR");
 
@@ -37,6 +38,7 @@ pub mod escrow {
         proposed_deadline: i64,
         creation_time: i64,
         metadata: OrderMetadata,
+        token_mint: Option<Pubkey>,
     ) -> Result<()> {
         // Validate deadline range
         let time_until_deadline = proposed_deadline - creation_time;
@@ -63,6 +65,7 @@ pub mod escrow {
         order.extension_requested = false;
         order.extension_deadline = 0;
         order.bill_of_lading_hash = [0u8; 32];
+        order.token_mint = token_mint;
         order.history = Vec::new();
         order.metadata = metadata;
         order.last_updated = creation_time;
@@ -74,20 +77,38 @@ pub mod escrow {
             creation_time,
         );
         
-        // Transfer SOL from importer to escrow PDA
-        let ix = system_instruction::transfer(
-            ctx.accounts.importer.key,
-            ctx.accounts.escrow_pda.key,
-            amount,
-        );
-        invoke(
-            &ix,
-            &[
-                ctx.accounts.importer.to_account_info(),
-                ctx.accounts.escrow_pda.to_account_info(),
-                ctx.accounts.system_program.to_account_info(),
-            ],
-        )?;
+        // Transfer funds from importer to escrow PDA/token account
+        match order.token_mint {
+            None => {
+                // Transfer SOL
+                let ix = system_instruction::transfer(
+                    ctx.accounts.importer.key,
+                    ctx.accounts.escrow_pda.key,
+                    amount,
+                );
+                invoke(
+                    &ix,
+                    &[
+                        ctx.accounts.importer.to_account_info(),
+                        ctx.accounts.escrow_pda.to_account_info(),
+                        ctx.accounts.system_program.to_account_info(),
+                    ],
+                )?;
+            },
+            Some(_mint) => {
+                // Transfer SPL tokens
+                let cpi_accounts = token::Transfer {
+                    from: ctx.accounts.importer_token_account.as_ref().unwrap().to_account_info(),
+                    to: ctx.accounts.escrow_token_account.as_ref().unwrap().to_account_info(),
+                    authority: ctx.accounts.importer.to_account_info(),
+                };
+                let cpi_ctx = CpiContext::new(
+                    ctx.accounts.token_program.as_ref().unwrap().to_account_info(),
+                    cpi_accounts,
+                );
+                token::transfer(cpi_ctx, amount)?;
+            }
+        }
         Ok(())
     }
 
@@ -139,29 +160,51 @@ pub mod escrow {
         
         // Automatically release funds to exporter when delivery is confirmed
         let amount = order.amount;
-        let ix = system_instruction::transfer(
-            ctx.accounts.escrow_pda.key,
-            ctx.accounts.exporter.key,
-            amount,
-        );
-        
-        let order_key = order.key();
-        let seeds = &[
-            b"escrow_pda",
-            order_key.as_ref(),
-            &[ctx.bumps.escrow_pda],
-        ];
-        let signer = &[&seeds[..]];
-        
-        invoke_signed(
-            &ix,
-            &[
-                ctx.accounts.escrow_pda.to_account_info(),
-                ctx.accounts.exporter.to_account_info(),
-                ctx.accounts.system_program.to_account_info(),
-            ],
-            signer,
-        )?;
+        match order.token_mint {
+            None => {
+                let ix = system_instruction::transfer(
+                    ctx.accounts.escrow_pda.key,
+                    ctx.accounts.exporter.key,
+                    amount,
+                );
+                let order_key = order.key();
+                let seeds = &[
+                    b"escrow_pda",
+                    order_key.as_ref(),
+                    &[ctx.bumps.escrow_pda],
+                ];
+                let signer = &[&seeds[..]];
+                invoke_signed(
+                    &ix,
+                    &[
+                        ctx.accounts.escrow_pda.to_account_info(),
+                        ctx.accounts.exporter.to_account_info(),
+                        ctx.accounts.system_program.to_account_info(),
+                    ],
+                    signer,
+                )?;
+            },
+            Some(_mint) => {
+                let cpi_accounts = token::Transfer {
+                    from: ctx.accounts.escrow_token_account.as_ref().unwrap().to_account_info(),
+                    to: ctx.accounts.exporter_token_account.as_ref().unwrap().to_account_info(),
+                    authority: ctx.accounts.escrow_pda.to_account_info(),
+                };
+                let order_key = order.key();
+                let seeds = &[
+                    b"escrow_pda",
+                    order_key.as_ref(),
+                    &[ctx.bumps.escrow_pda],
+                ];
+                let signer = &[&seeds[..]];
+                let cpi_ctx = CpiContext::new_with_signer(
+                    ctx.accounts.token_program.as_ref().unwrap().to_account_info(),
+                    cpi_accounts,
+                    signer,
+                );
+                token::transfer(cpi_ctx, amount)?;
+            }
+        }
         order.state = OrderState::Completed;
         
         // Add history entry for completion
@@ -184,29 +227,51 @@ pub mod escrow {
         
         // Automatically refund to importer if deadline has passed and goods not delivered
         let amount = order.amount;
-        let ix = system_instruction::transfer(
-            ctx.accounts.escrow_pda.key,
-            ctx.accounts.importer.key,
-            amount,
-        );
-        
-        let order_key = order.key();
-        let seeds = &[
-            b"escrow_pda",
-            order_key.as_ref(),
-            &[ctx.bumps.escrow_pda],
-        ];
-        let signer = &[&seeds[..]];
-        
-        invoke_signed(
-            &ix,
-            &[
-                ctx.accounts.escrow_pda.to_account_info(),
-                ctx.accounts.importer.to_account_info(),
-                ctx.accounts.system_program.to_account_info(),
-            ],
-            signer,
-        )?;
+        match order.token_mint {
+            None => {
+                let ix = system_instruction::transfer(
+                    ctx.accounts.escrow_pda.key,
+                    ctx.accounts.importer.key,
+                    amount,
+                );
+                let order_key = order.key();
+                let seeds = &[
+                    b"escrow_pda",
+                    order_key.as_ref(),
+                    &[ctx.bumps.escrow_pda],
+                ];
+                let signer = &[&seeds[..]];
+                invoke_signed(
+                    &ix,
+                    &[
+                        ctx.accounts.escrow_pda.to_account_info(),
+                        ctx.accounts.importer.to_account_info(),
+                        ctx.accounts.system_program.to_account_info(),
+                    ],
+                    signer,
+                )?;
+            },
+            Some(_mint) => {
+                let cpi_accounts = token::Transfer {
+                    from: ctx.accounts.escrow_token_account.as_ref().unwrap().to_account_info(),
+                    to: ctx.accounts.importer_token_account.as_ref().unwrap().to_account_info(),
+                    authority: ctx.accounts.escrow_pda.to_account_info(),
+                };
+                let order_key = order.key();
+                let seeds = &[
+                    b"escrow_pda",
+                    order_key.as_ref(),
+                    &[ctx.bumps.escrow_pda],
+                ];
+                let signer = &[&seeds[..]];
+                let cpi_ctx = CpiContext::new_with_signer(
+                    ctx.accounts.token_program.as_ref().unwrap().to_account_info(),
+                    cpi_accounts,
+                    signer,
+                );
+                token::transfer(cpi_ctx, amount)?;
+            }
+        }
         order.state = OrderState::Refunded;
         
         // Add history entry
@@ -466,6 +531,12 @@ pub struct CreateOrder<'info> {
     )]
     pub escrow_pda: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
+    // SPL token support
+    #[account(mut, constraint = importer_token_account.owner == importer.key() @ EscrowError::Unauthorized)]
+    pub importer_token_account: Option<Account<'info, TokenAccount>>,
+    #[account(mut)]
+    pub escrow_token_account: Option<Account<'info, TokenAccount>>,
+    pub token_program: Option<Program<'info, Token>>,
 }
 
 #[derive(Accounts)]
@@ -491,6 +562,12 @@ pub struct ConfirmDelivery<'info> {
     #[account(mut)]
     pub exporter: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
+    // SPL token support
+    #[account(mut)]
+    pub escrow_token_account: Option<Account<'info, TokenAccount>>,
+    #[account(mut)]
+    pub exporter_token_account: Option<Account<'info, TokenAccount>>,
+    pub token_program: Option<Program<'info, Token>>,
 }
 
 #[derive(Accounts)]
@@ -508,6 +585,12 @@ pub struct CheckDeadlineAndRefund<'info> {
     #[account(mut)]
     pub importer: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
+    // SPL token support
+    #[account(mut)]
+    pub escrow_token_account: Option<Account<'info, TokenAccount>>,
+    #[account(mut)]
+    pub importer_token_account: Option<Account<'info, TokenAccount>>,
+    pub token_program: Option<Program<'info, Token>>,
 }
 
 #[derive(Accounts)]
@@ -602,13 +685,14 @@ pub struct Order {
     pub extension_requested: bool, // Whether an extension has been requested
     pub extension_deadline: i64, // Proposed extension deadline
     pub bill_of_lading_hash: [u8; 32],
+    pub token_mint: Option<Pubkey>, // None = SOL, Some = SPL token
     pub history: Vec<OrderHistoryEntry>, // Order state history
     pub metadata: OrderMetadata, // Search/filter metadata
     pub last_updated: i64, // Last modification timestamp
 }
 
 impl Order {
-    pub const LEN: usize = 32 + 32 + 32 + 8 + 1 + 8 + 8 + 8 + 1 + 1 + 8 + 32 + 4 + (8 + 1 + 100) * 10 + 4 + 50 + 200 + 4 + (20 * 5) + 30 + 8;
+    pub const LEN: usize = 32 + 32 + 32 + 8 + 1 + 8 + 8 + 8 + 1 + 1 + 8 + 32 + 33 + 4 + (8 + 1 + 100) * 10 + 4 + 50 + 200 + 4 + (20 * 5) + 30 + 8;
     
     // Helper function to add history entry
     pub fn add_history_entry(&mut self, state: OrderState, description: String, timestamp: i64) {
