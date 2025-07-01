@@ -229,16 +229,19 @@ async function createOrder() {
     metadata,
     tokenMint ? tokenMint : null
   );
-  const accounts = {
+  let accounts = {
     order: order.publicKey,
     importer: importer.publicKey,
     escrowPda,
     systemProgram: SystemProgram.programId,
   };
   if (paymentType === "SPL") {
-    accounts.importerTokenAccount = importerTokenAccount;
-    accounts.escrowTokenAccount = escrowTokenAccount;
-    accounts.tokenProgram = anchor.utils.token.TOKEN_PROGRAM_ID;
+    accounts = {
+      ...accounts,
+      importerTokenAccount,
+      escrowTokenAccount,
+      tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
+    };
   }
   await method.accounts(accounts).signers([importer, order]).rpc();
   
