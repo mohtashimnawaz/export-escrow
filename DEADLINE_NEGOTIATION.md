@@ -195,4 +195,60 @@ All tests pass including:
 - ✅ State transitions
 - ✅ Fund transfers
 
-The system ensures that no goods can be shipped and no refunds can be processed until the importer has approved a delivery deadline, creating a fair and transparent escrow process. 
+The system ensures that no goods can be shipped and no refunds can be processed until the importer has approved a delivery deadline, creating a fair and transparent escrow process.
+
+## Partial Payments (NEW)
+
+The escrow contract supports partial releases and refunds, allowing funds to be distributed in increments rather than all at once.
+
+### How it works
+- **Partial Release:** After delivery, the verifier or importer can release any portion of the escrowed funds to the exporter, multiple times, until the full amount is released.
+- **Partial Refund:** After the deadline, the importer can refund any portion of the remaining escrowed funds, multiple times, until the full amount is refunded.
+- The contract tracks `released_amount` and `refunded_amount` for each order.
+- Once the total released + refunded equals the order amount, the order is marked as completed or refunded.
+
+### New Functions
+
+#### `partial_release_funds`
+```rust
+pub fn partial_release_funds(ctx: Context<PartialReleaseFunds>, amount: u64) -> Result<()>
+```
+- **Purpose:** Release a specified amount to the exporter.
+- **Requirements:**
+  - Only verifier or importer can call
+  - Order must be delivered or in transit
+  - Amount must not exceed remaining escrowed funds
+
+#### `partial_refund`
+```rust
+pub fn partial_refund(ctx: Context<PartialRefund>, amount: u64, current_time: i64) -> Result<()>
+```
+- **Purpose:** Refund a specified amount to the importer after the deadline.
+- **Requirements:**
+  - Only importer can call
+  - Deadline must have passed
+  - Amount must not exceed remaining escrowed funds
+
+### CLI Options
+- **Option 21:** Partial release funds to exporter
+- **Option 22:** Partial refund to importer
+
+### Example Usage
+```js
+// Partial release
+await program.methods.partialReleaseFunds(new anchor.BN(5000))
+  .accounts({...})
+  .signers([verifier])
+  .rpc();
+
+// Partial refund
+await program.methods.partialRefund(new anchor.BN(2000), new anchor.BN(currentTime))
+  .accounts({...})
+  .signers([importer])
+  .rpc();
+```
+
+### Benefits
+- **Flexibility:** Funds can be distributed as milestones are met or as disputes are resolved.
+- **Transparency:** All partial actions are recorded in order history.
+- **Security:** Prevents over-release or over-refund. 
