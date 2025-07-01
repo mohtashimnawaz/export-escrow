@@ -243,6 +243,7 @@ async function createOrder() {
       tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
     };
   }
+  console.log("[DEBUG] Accounts object for createOrder:", accounts);
   await method.accounts(accounts).signers([importer, order]).rpc();
   
   console.log("✅ Order created successfully!");
