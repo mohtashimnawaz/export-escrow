@@ -108,12 +108,52 @@ async function airdropSol() {
   console.log("✅ Airdrop successful!");
 }
 
+// Helper to create metadata
+function createMetadata(title, description, tags, category) {
+  return {
+    title: title || "Default Order",
+    description: description || "Escrow order for goods/services",
+    tags: tags || ["escrow", "trade"],
+    category: category || "general"
+  };
+}
+
+// Helper to validate metadata
+function validateMetadata(metadata) {
+  if (metadata.title.length > 50) throw new Error("Title too long (max 50 characters)");
+  if (metadata.description.length > 200) throw new Error("Description too long (max 200 characters)");
+  if (metadata.category.length > 30) throw new Error("Category too long (max 30 characters)");
+  if (metadata.tags.length > 5) throw new Error("Too many tags (max 5)");
+  for (let tag of metadata.tags) {
+    if (tag.length > 20) throw new Error(`Tag too long: ${tag} (max 20 characters)`);
+  }
+}
+
 async function createOrder() {
   const order = Keypair.generate();
   const amount = 0.1 * LAMPORTS_PER_SOL;
   
   console.log("📦 Creating escrow order...");
   console.log(`💰 Amount: ${amount / LAMPORTS_PER_SOL} SOL`);
+  
+  // Get metadata from user
+  console.log("\n📝 Order Metadata:");
+  const title = await question("Order title (max 50 chars, or press Enter for default): ") || "Default Order";
+  const description = await question("Order description (max 200 chars, or press Enter for default): ") || "Escrow order for goods/services";
+  const category = await question("Category (max 30 chars, or press Enter for 'general'): ") || "general";
+  
+  console.log("Tags (comma-separated, max 5 tags, each max 20 chars):");
+  const tagsInput = await question("Enter tags (or press Enter for default): ") || "escrow,trade";
+  const tags = tagsInput.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
+  
+  const metadata = createMetadata(title, description, tags, category);
+  
+  try {
+    validateMetadata(metadata);
+  } catch (error) {
+    console.log(`❌ Metadata validation error: ${error.message}`);
+    return null;
+  }
   
   // Prompt for deadline input
   console.log("\nDeadline format examples:");
@@ -147,7 +187,8 @@ async function createOrder() {
     verifier.publicKey,
     new anchor.BN(amount),
     new anchor.BN(proposedDeadline),
-    new anchor.BN(creationTime)
+    new anchor.BN(creationTime),
+    metadata
   ).accounts({
     order: order.publicKey,
     importer: importer.publicKey,
@@ -158,6 +199,10 @@ async function createOrder() {
   console.log("✅ Order created successfully!");
   console.log(`📋 Order ID: ${order.publicKey.toString()}`);
   console.log(`🏦 Escrow PDA: ${escrowPda.toString()}`);
+  console.log(`📝 Title: ${metadata.title}`);
+  console.log(`📄 Description: ${metadata.description}`);
+  console.log(`🏷️ Tags: ${metadata.tags.join(', ')}`);
+  console.log(`📂 Category: ${metadata.category}`);
   console.log("⏳ Waiting for importer to approve deadline...");
   
   return { order, escrowPda };
@@ -395,7 +440,14 @@ async function showMenu() {
   console.log("11. Approve deadline extension (Importer)");
   console.log("12. Reject deadline extension (Importer)");
   console.log("13. Run complete escrow flow");
-  console.log("14. Exit");
+  console.log("--- Enhanced Order Management ---");
+  console.log("14. Update order metadata");
+  console.log("15. View order history");
+  console.log("16. Dispute order");
+  console.log("17. Resolve dispute (Verifier)");
+  console.log("18. Search orders (Demo)");
+  console.log("19. Bulk operations (Demo)");
+  console.log("20. Exit");
   console.log("==================================================");
 }
 
@@ -530,6 +582,178 @@ async function rejectDeadlineExtension(order) {
   }
 }
 
+// Enhanced Order Management Functions
+async function updateOrderMetadata(order) {
+  console.log("📝 Updating order metadata...");
+  
+  // Get new metadata from user
+  console.log("\n📝 New Order Metadata:");
+  const title = await question("New title (max 50 chars, or press Enter to skip): ");
+  const description = await question("New description (max 200 chars, or press Enter to skip): ");
+  const category = await question("New category (max 30 chars, or press Enter to skip): ");
+  
+  console.log("New tags (comma-separated, max 5 tags, each max 20 chars):");
+  const tagsInput = await question("Enter new tags (or press Enter to skip): ");
+  
+  // Get current order data to preserve unchanged fields
+  const orderData = await program.account.order.fetch(order.publicKey);
+  const currentMetadata = orderData.metadata;
+  
+  const newMetadata = {
+    title: title || currentMetadata.title,
+    description: description || currentMetadata.description,
+    category: category || currentMetadata.category,
+    tags: tagsInput ? tagsInput.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0) : currentMetadata.tags
+  };
+  
+  try {
+    validateMetadata(newMetadata);
+  } catch (error) {
+    console.log(`❌ Metadata validation error: ${error.message}`);
+    return;
+  }
+  
+  const currentTime = Math.floor(Date.now() / 1000);
+  
+  await program.methods.updateOrderMetadata(newMetadata, new anchor.BN(currentTime))
+    .accounts({
+      order: order.publicKey,
+      signer: importer.publicKey, // Using importer as signer
+    })
+    .signers([importer])
+    .rpc();
+  
+  console.log("✅ Order metadata updated successfully!");
+}
+
+async function disputeOrder(order) {
+  console.log("⚠️ Disputing order...");
+  
+  const reason = await question("Enter dispute reason (max 80 chars): ");
+  if (reason.length > 80) {
+    console.log("❌ Reason too long (max 80 characters)");
+    return;
+  }
+  
+  const currentTime = Math.floor(Date.now() / 1000);
+  
+  await program.methods.disputeOrder(reason, new anchor.BN(currentTime))
+    .accounts({
+      order: order.publicKey,
+      signer: importer.publicKey, // Using importer as signer
+    })
+    .signers([importer])
+    .rpc();
+  
+  console.log("✅ Order disputed successfully!");
+  console.log(`📝 Reason: ${reason}`);
+}
+
+async function resolveDispute(order) {
+  console.log("🔧 Resolving dispute...");
+  
+  const resolution = await question("Enter resolution details (max 80 chars): ");
+  if (resolution.length > 80) {
+    console.log("❌ Resolution too long (max 80 characters)");
+    return;
+  }
+  
+  const currentTime = Math.floor(Date.now() / 1000);
+  
+  await program.methods.resolveDispute(resolution, new anchor.BN(currentTime))
+    .accounts({
+      order: order.publicKey,
+      verifier: verifier.publicKey,
+    })
+    .signers([verifier])
+    .rpc();
+  
+  console.log("✅ Dispute resolved successfully!");
+  console.log(`📝 Resolution: ${resolution}`);
+}
+
+async function viewOrderHistory(order) {
+  console.log("📜 Order History:");
+  
+  try {
+    const orderData = await program.account.order.fetch(order.publicKey);
+    const history = orderData.history;
+    
+    if (history.length === 0) {
+      console.log("No history entries found.");
+      return;
+    }
+    
+    console.log(`\n📋 Order: ${order.publicKey.toString()}`);
+    console.log(`📝 Title: ${orderData.metadata.title}`);
+    console.log(`📄 Description: ${orderData.metadata.description}`);
+    console.log(`🏷️ Tags: ${orderData.metadata.tags.join(', ')}`);
+    console.log(`📂 Category: ${orderData.metadata.category}`);
+    console.log(`💰 Amount: ${orderData.amount / LAMPORTS_PER_SOL} SOL`);
+    console.log(`🔄 Current State: ${orderData.state}`);
+    console.log(`📅 Created: ${formatDeadline(orderData.createdAt)}`);
+    console.log(`🕒 Last Updated: ${formatDeadline(orderData.lastUpdated)}`);
+    
+    console.log("\n📜 History Entries:");
+    history.forEach((entry, index) => {
+      console.log(`\n${index + 1}. ${formatDeadline(entry.timestamp)}`);
+      console.log(`   State: ${entry.state}`);
+      console.log(`   Description: ${entry.description}`);
+    });
+    
+  } catch (error) {
+    console.log(`❌ Error fetching order history: ${error.message}`);
+  }
+}
+
+async function searchOrders() {
+  console.log("🔍 Order Search (Demo - showing current order details)");
+  console.log("Note: In a real implementation, this would search across multiple orders");
+  
+  // For demo purposes, we'll just show the current order if it exists
+  try {
+    // This is a placeholder - in a real implementation you'd search by various criteria
+    console.log("Search functionality would include:");
+    console.log("- Search by status (Pending, InTransit, Completed, etc.)");
+    console.log("- Search by date range");
+    console.log("- Search by parties (importer, exporter, verifier)");
+    console.log("- Search by metadata (title, description, tags, category)");
+    console.log("- Search by amount range");
+    console.log("- Bulk operations on search results");
+  } catch (error) {
+    console.log(`❌ Error in search: ${error.message}`);
+  }
+}
+
+async function bulkOperations() {
+  console.log("⚡ Bulk Operations (Demo)");
+  console.log("Note: In a real implementation, this would handle multiple orders");
+  
+  try {
+    const currentTime = Math.floor(Date.now() / 1000);
+    
+    // This is a placeholder - in a real implementation you'd process multiple orders
+    await program.methods.bulkCheckDeadlines(new anchor.BN(currentTime))
+      .accounts({
+        order: Keypair.generate().publicKey, // Placeholder
+        escrowPda: Keypair.generate().publicKey, // Placeholder
+        importer: Keypair.generate().publicKey, // Placeholder
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+    
+    console.log("✅ Bulk deadline check initiated!");
+    console.log("Bulk operations would include:");
+    console.log("- Bulk deadline checks and refunds");
+    console.log("- Bulk status updates");
+    console.log("- Bulk metadata updates");
+    console.log("- Bulk dispute resolution");
+    
+  } catch (error) {
+    console.log(`❌ Error in bulk operations: ${error.message}`);
+  }
+}
+
 async function main() {
   console.log("🚀 Starting Escrow Smart Contract Interface...");
   
@@ -538,7 +762,7 @@ async function main() {
   
   while (true) {
     await showMenu();
-    const choice = await question("Enter your choice (1-14): ");
+    const choice = await question("Enter your choice (1-20): ");
     
     try {
       switch (choice) {
@@ -612,6 +836,40 @@ async function main() {
           await runCompleteFlow();
           break;
         case "14":
+          if (!currentOrder) {
+            console.log("❌ No order created yet. Please create an order first.");
+            break;
+          }
+          await updateOrderMetadata(currentOrder);
+          break;
+        case "15":
+          if (!currentOrder) {
+            console.log("❌ No order created yet. Please create an order first.");
+            break;
+          }
+          await viewOrderHistory(currentOrder);
+          break;
+        case "16":
+          if (!currentOrder) {
+            console.log("❌ No order created yet. Please create an order first.");
+            break;
+          }
+          await disputeOrder(currentOrder);
+          break;
+        case "17":
+          if (!currentOrder) {
+            console.log("❌ No order created yet. Please create an order first.");
+            break;
+          }
+          await resolveDispute(currentOrder);
+          break;
+        case "18":
+          await searchOrders();
+          break;
+        case "19":
+          await bulkOperations();
+          break;
+        case "20":
           console.log("👋 Goodbye!");
           rl.close();
           return;

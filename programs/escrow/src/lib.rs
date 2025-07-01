@@ -8,6 +8,23 @@ declare_id!("9KUNonirg79qR5SeSGdG49XfQ1DXKkB8GZEVzsakuZcR");
 const MIN_DEADLINE: i64 = 60;           // 1 minute
 const MAX_DEADLINE: i64 = 8 * 30 * 24 * 60 * 60; // 8 months (approximate)
 
+// Order history entry
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
+pub struct OrderHistoryEntry {
+    pub timestamp: i64,
+    pub state: OrderState,
+    pub description: String, // Max 100 characters
+}
+
+// Order metadata for search/filter
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
+pub struct OrderMetadata {
+    pub title: String, // Max 50 characters
+    pub description: String, // Max 200 characters
+    pub tags: Vec<String>, // Max 5 tags, each max 20 characters
+    pub category: String, // Max 30 characters
+}
+
 #[program]
 pub mod escrow {
     use super::*;
@@ -19,6 +36,7 @@ pub mod escrow {
         amount: u64,
         proposed_deadline: i64,
         creation_time: i64,
+        metadata: OrderMetadata,
     ) -> Result<()> {
         // Validate deadline range
         let time_until_deadline = proposed_deadline - creation_time;
@@ -45,6 +63,16 @@ pub mod escrow {
         order.extension_requested = false;
         order.extension_deadline = 0;
         order.bill_of_lading_hash = [0u8; 32];
+        order.history = Vec::new();
+        order.metadata = metadata;
+        order.last_updated = creation_time;
+        
+        // Add initial history entry
+        order.add_history_entry(
+            OrderState::PendingDeadlineApproval,
+            "Order created - waiting for deadline approval".to_string(),
+            creation_time,
+        );
         
         // Transfer SOL from importer to escrow PDA
         let ix = system_instruction::transfer(
@@ -78,6 +106,14 @@ pub mod escrow {
         
         order.bill_of_lading_hash = bill_of_lading_hash;
         order.state = OrderState::InTransit;
+        
+        // Add history entry
+        order.add_history_entry(
+            OrderState::InTransit,
+            "Goods shipped - order in transit".to_string(),
+            now,
+        );
+        
         Ok(())
     }
 
@@ -93,6 +129,13 @@ pub mod escrow {
         require!(now <= order.approved_deadline, EscrowError::DeadlinePassed);
         
         order.state = OrderState::Delivered;
+        
+        // Add history entry for delivery
+        order.add_history_entry(
+            OrderState::Delivered,
+            "Delivery confirmed by verifier/importer".to_string(),
+            now,
+        );
         
         // Automatically release funds to exporter when delivery is confirmed
         let amount = order.amount;
@@ -120,6 +163,13 @@ pub mod escrow {
             signer,
         )?;
         order.state = OrderState::Completed;
+        
+        // Add history entry for completion
+        order.add_history_entry(
+            OrderState::Completed,
+            "Order completed - funds released to exporter".to_string(),
+            now,
+        );
         
         Ok(())
     }
@@ -159,6 +209,13 @@ pub mod escrow {
         )?;
         order.state = OrderState::Refunded;
         
+        // Add history entry
+        order.add_history_entry(
+            OrderState::Refunded,
+            "Deadline passed - funds refunded to importer".to_string(),
+            current_time,
+        );
+        
         // Debug: Print the values
         msg!("Debug - Current time: {}", current_time);
         msg!("Debug - Approved deadline: {}", order.approved_deadline);
@@ -183,6 +240,13 @@ pub mod escrow {
         order.deadline_approved = true;
         order.state = OrderState::PendingShipment;
         
+        // Add history entry
+        order.add_history_entry(
+            OrderState::PendingShipment,
+            "Deadline approved by importer - ready for shipment".to_string(),
+            current_time,
+        );
+        
         // Debug: Print the values (this will be in the transaction logs)
         msg!("Debug - Creation time: {}", creation_time);
         msg!("Debug - Proposed deadline: {}", order.proposed_deadline);
@@ -198,7 +262,7 @@ pub mod escrow {
         require!(order.state == OrderState::PendingDeadlineApproval, EscrowError::InvalidState);
         require!(order.exporter == *ctx.accounts.exporter.key, EscrowError::Unauthorized);
         
-        // Validate deadline range
+        // Validate new deadline range
         let now = Clock::get()?.unix_timestamp;
         let time_until_deadline = new_deadline - now;
         
@@ -213,6 +277,14 @@ pub mod escrow {
         
         order.proposed_deadline = new_deadline;
         order.deadline_approved = false;
+        order.approved_deadline = 0;
+        
+        // Add history entry
+        order.add_history_entry(
+            OrderState::PendingDeadlineApproval,
+            "New deadline proposed by exporter - waiting for approval".to_string(),
+            now,
+        );
         
         Ok(())
     }
@@ -221,33 +293,31 @@ pub mod escrow {
         let order = &mut ctx.accounts.order;
         require!(order.state == OrderState::PendingShipment || order.state == OrderState::InTransit, EscrowError::InvalidState);
         require!(order.exporter == *ctx.accounts.exporter.key, EscrowError::Unauthorized);
+        require!(order.deadline_approved, EscrowError::DeadlineNotApproved);
         require!(!order.extension_requested, EscrowError::ExtensionAlreadyRequested);
         
-        // Check if current deadline has passed
-        require!(current_time <= order.approved_deadline, EscrowError::DeadlinePassed);
+        // Validate extension deadline range
+        let time_until_deadline = new_deadline - current_time;
         
-        // Validate new deadline is in the future and within range
-        let time_until_new_deadline = new_deadline - current_time;
         require!(
-            time_until_new_deadline >= MIN_DEADLINE,
+            time_until_deadline >= MIN_DEADLINE,
             EscrowError::DeadlineTooShort
         );
         require!(
-            time_until_new_deadline <= MAX_DEADLINE,
+            time_until_deadline <= MAX_DEADLINE,
             EscrowError::DeadlineTooLong
         );
-        
-        // New deadline must be after current approved deadline
-        require!(new_deadline > order.approved_deadline, EscrowError::DeadlineTooShort);
         
         order.extension_requested = true;
         order.extension_deadline = new_deadline;
         order.state = OrderState::PendingExtensionApproval;
         
-        // Debug: Print the values
-        msg!("Debug - Current approved deadline: {}", order.approved_deadline);
-        msg!("Debug - Requested extension deadline: {}", new_deadline);
-        msg!("Debug - Extension duration: {}", new_deadline - order.approved_deadline);
+        // Add history entry
+        order.add_history_entry(
+            OrderState::PendingExtensionApproval,
+            "Deadline extension requested by exporter - waiting for approval".to_string(),
+            current_time,
+        );
         
         Ok(())
     }
@@ -264,11 +334,19 @@ pub mod escrow {
         order.extension_deadline = 0;
         
         // Return to previous state (PendingShipment or InTransit)
-        if order.bill_of_lading_hash != [0u8; 32] {
-            order.state = OrderState::InTransit;
+        let new_state = if order.bill_of_lading_hash != [0u8; 32] {
+            OrderState::InTransit
         } else {
-            order.state = OrderState::PendingShipment;
-        }
+            OrderState::PendingShipment
+        };
+        order.state = new_state.clone();
+        
+        // Add history entry
+        order.add_history_entry(
+            new_state,
+            "Deadline extension approved by importer".to_string(),
+            current_time,
+        );
         
         // Debug: Print the values
         msg!("Debug - Extension approved at: {}", current_time);
@@ -288,11 +366,87 @@ pub mod escrow {
         order.extension_deadline = 0;
         
         // Return to previous state (PendingShipment or InTransit)
-        if order.bill_of_lading_hash != [0u8; 32] {
-            order.state = OrderState::InTransit;
+        let new_state = if order.bill_of_lading_hash != [0u8; 32] {
+            OrderState::InTransit
         } else {
-            order.state = OrderState::PendingShipment;
-        }
+            OrderState::PendingShipment
+        };
+        order.state = new_state.clone();
+        
+        // Add history entry
+        let now = Clock::get()?.unix_timestamp;
+        order.add_history_entry(
+            new_state,
+            "Deadline extension rejected by importer".to_string(),
+            now,
+        );
+        
+        Ok(())
+    }
+
+    // Bulk operations and order management functions
+    pub fn update_order_metadata(ctx: Context<UpdateOrderMetadata>, metadata: OrderMetadata, current_time: i64) -> Result<()> {
+        let order = &mut ctx.accounts.order;
+        // Only importer or exporter can update metadata
+        let signer = ctx.accounts.signer.key;
+        require!(signer == &order.importer || signer == &order.exporter, EscrowError::Unauthorized);
+        
+        let current_state = order.state.clone();
+        order.update_metadata(metadata, current_time);
+        
+        // Add history entry
+        order.add_history_entry(
+            current_state,
+            "Order metadata updated".to_string(),
+            current_time,
+        );
+        
+        Ok(())
+    }
+
+    pub fn bulk_check_deadlines(_ctx: Context<BulkCheckDeadlines>, current_time: i64) -> Result<()> {
+        // This function will be called by the CLI to check multiple orders
+        // The actual refund logic is handled in check_deadline_and_refund for individual orders
+        // This is just a placeholder for bulk operations
+        msg!("Bulk deadline check initiated at: {}", current_time);
+        Ok(())
+    }
+
+    pub fn dispute_order(ctx: Context<DisputeOrder>, reason: String, current_time: i64) -> Result<()> {
+        let order = &mut ctx.accounts.order;
+        // Only importer or exporter can dispute
+        let signer = ctx.accounts.signer.key;
+        require!(signer == &order.importer || signer == &order.exporter, EscrowError::Unauthorized);
+        require!(order.state != OrderState::Completed && order.state != OrderState::Refunded, EscrowError::InvalidState);
+        
+        order.state = OrderState::Disputed;
+        
+        // Add history entry
+        order.add_history_entry(
+            OrderState::Disputed,
+            format!("Order disputed: {}", if reason.len() > 80 { &reason[..80] } else { &reason }),
+            current_time,
+        );
+        
+        Ok(())
+    }
+
+    pub fn resolve_dispute(ctx: Context<ResolveDispute>, resolution: String, current_time: i64) -> Result<()> {
+        let order = &mut ctx.accounts.order;
+        // Only verifier can resolve disputes
+        require!(order.verifier == *ctx.accounts.verifier.key, EscrowError::Unauthorized);
+        require!(order.state == OrderState::Disputed, EscrowError::InvalidState);
+        
+        // For now, we'll just mark as completed (verifier decided in favor of exporter)
+        // In a real implementation, you might want more sophisticated dispute resolution
+        order.state = OrderState::Completed;
+        
+        // Add history entry
+        order.add_history_entry(
+            OrderState::Completed,
+            format!("Dispute resolved: {}", if resolution.len() > 80 { &resolution[..80] } else { &resolution }),
+            current_time,
+        );
         
         Ok(())
     }
@@ -396,6 +550,44 @@ pub struct RejectDeadlineExtension<'info> {
     pub importer: Signer<'info>,
 }
 
+#[derive(Accounts)]
+pub struct UpdateOrderMetadata<'info> {
+    #[account(mut)]
+    pub order: Account<'info, Order>,
+    pub signer: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct BulkCheckDeadlines<'info> {
+    #[account(mut)]
+    pub order: Account<'info, Order>,
+    /// CHECK: This is the escrow PDA
+    #[account(
+        mut,
+        seeds = [b"escrow_pda", order.key().as_ref()],
+        bump
+    )]
+    pub escrow_pda: UncheckedAccount<'info>,
+    /// CHECK: Importer account
+    #[account(mut)]
+    pub importer: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct DisputeOrder<'info> {
+    #[account(mut)]
+    pub order: Account<'info, Order>,
+    pub signer: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct ResolveDispute<'info> {
+    #[account(mut)]
+    pub order: Account<'info, Order>,
+    pub verifier: Signer<'info>,
+}
+
 #[account]
 pub struct Order {
     pub importer: Pubkey,
@@ -410,10 +602,39 @@ pub struct Order {
     pub extension_requested: bool, // Whether an extension has been requested
     pub extension_deadline: i64, // Proposed extension deadline
     pub bill_of_lading_hash: [u8; 32],
+    pub history: Vec<OrderHistoryEntry>, // Order state history
+    pub metadata: OrderMetadata, // Search/filter metadata
+    pub last_updated: i64, // Last modification timestamp
 }
 
 impl Order {
-    pub const LEN: usize = 32 + 32 + 32 + 8 + 1 + 8 + 8 + 8 + 1 + 1 + 8 + 32;
+    pub const LEN: usize = 32 + 32 + 32 + 8 + 1 + 8 + 8 + 8 + 1 + 1 + 8 + 32 + 4 + (8 + 1 + 100) * 10 + 4 + 50 + 200 + 4 + (20 * 5) + 30 + 8;
+    
+    // Helper function to add history entry
+    pub fn add_history_entry(&mut self, state: OrderState, description: String, timestamp: i64) {
+        let entry = OrderHistoryEntry {
+            timestamp,
+            state: state.clone(),
+            description: if description.len() > 100 {
+                description[..100].to_string()
+            } else {
+                description
+            },
+        };
+        
+        // Keep only last 10 history entries to save space
+        if self.history.len() >= 10 {
+            self.history.remove(0);
+        }
+        self.history.push(entry);
+        self.last_updated = timestamp;
+    }
+    
+    // Helper function to update metadata
+    pub fn update_metadata(&mut self, metadata: OrderMetadata, timestamp: i64) {
+        self.metadata = metadata;
+        self.last_updated = timestamp;
+    }
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
