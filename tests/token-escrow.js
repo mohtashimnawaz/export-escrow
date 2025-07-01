@@ -258,4 +258,103 @@ describe("escrow", () => {
     // This is left as an exercise for further testing
     console.log("✅ Refund simulation test passed");
   });
+
+  it("Partial release to exporter after delivery", async () => {
+    // Confirm delivery first
+    await program.methods.confirmDelivery()
+      .accounts({
+        order: order.publicKey,
+        signer: verifier.publicKey,
+        escrowPda,
+        exporter: exporter.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([verifier])
+      .rpc();
+    // Partial release
+    const partialAmount = amount / 2;
+    await program.methods.partialReleaseFunds(new anchor.BN(partialAmount))
+      .accounts({
+        order: order.publicKey,
+        signer: verifier.publicKey,
+        escrowPda,
+        exporter: exporter.publicKey,
+        systemProgram: SystemProgram.programId,
+        escrowTokenAccount: null,
+        exporterTokenAccount: null,
+        tokenProgram: null,
+      })
+      .signers([verifier])
+      .rpc();
+    // Fetch order and check released_amount
+    const orderAccount = await program.account.order.fetch(order.publicKey);
+    assert(orderAccount.releasedAmount.toNumber() === partialAmount);
+  });
+
+  it("Partial refund to importer after deadline", async () => {
+    // Simulate deadline passed
+    const currentTime = Math.floor(Date.now() / 1000) + 2 * 24 * 60 * 60;
+    const partialAmount = amount / 4;
+    await program.methods.partialRefund(new anchor.BN(partialAmount), new anchor.BN(currentTime))
+      .accounts({
+        order: order.publicKey,
+        escrowPda,
+        importer: importer.publicKey,
+        systemProgram: SystemProgram.programId,
+        escrowTokenAccount: null,
+        importerTokenAccount: null,
+        tokenProgram: null,
+      })
+      .signers([importer])
+      .rpc();
+    // Fetch order and check refunded_amount
+    const orderAccount = await program.account.order.fetch(order.publicKey);
+    assert(orderAccount.refundedAmount.toNumber() === partialAmount);
+  });
+
+  it("Should fail to over-release funds", async () => {
+    // Try to release more than remaining
+    const overAmount = amount * 2;
+    try {
+      await program.methods.partialReleaseFunds(new anchor.BN(overAmount))
+        .accounts({
+          order: order.publicKey,
+          signer: verifier.publicKey,
+          escrowPda,
+          exporter: exporter.publicKey,
+          systemProgram: SystemProgram.programId,
+          escrowTokenAccount: null,
+          exporterTokenAccount: null,
+          tokenProgram: null,
+        })
+        .signers([verifier])
+        .rpc();
+      assert.fail("Should have thrown for over-release");
+    } catch (error) {
+      assert(error.message.includes("InvalidPartialAmount"));
+    }
+  });
+
+  it("Should fail to over-refund funds", async () => {
+    // Try to refund more than remaining
+    const overAmount = amount * 2;
+    const currentTime = Math.floor(Date.now() / 1000) + 2 * 24 * 60 * 60;
+    try {
+      await program.methods.partialRefund(new anchor.BN(overAmount), new anchor.BN(currentTime))
+        .accounts({
+          order: order.publicKey,
+          escrowPda,
+          importer: importer.publicKey,
+          systemProgram: SystemProgram.programId,
+          escrowTokenAccount: null,
+          importerTokenAccount: null,
+          tokenProgram: null,
+        })
+        .signers([importer])
+        .rpc();
+      assert.fail("Should have thrown for over-refund");
+    } catch (error) {
+      assert(error.message.includes("InvalidPartialAmount"));
+    }
+  });
 });

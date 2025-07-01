@@ -501,6 +501,8 @@ async function viewOrderDetails(order) {
       console.log(`Token Mint: ${orderAccount.tokenMint.toString()}`);
       console.log(`Amount: ${orderAccount.amount} tokens`);
     }
+    console.log(`Released: ${orderAccount.releasedAmount || 0}`);
+    console.log(`Refunded: ${orderAccount.refundedAmount || 0}`);
     console.log(`State: ${JSON.stringify(orderAccount.state)}`);
     console.log(`Created at: ${formatDeadline(orderAccount.createdAt)}`);
     console.log(`Proposed deadline: ${formatDeadline(orderAccount.proposedDeadline)}`);
@@ -555,6 +557,8 @@ async function showMenu() {
   console.log("18. Search orders (Demo)");
   console.log("19. Bulk operations (Demo)");
   console.log("20. Exit");
+  console.log("21. Partial release funds to exporter");
+  console.log("22. Partial refund to importer");
   console.log("==================================================");
 }
 
@@ -861,6 +865,114 @@ async function bulkOperations() {
   }
 }
 
+async function partialReleaseFunds(order, escrowPda) {
+  if (!order || !escrowPda) {
+    console.log("❌ No order created yet. Please create an order first.");
+    return;
+  }
+  let paymentType;
+  while (true) {
+    const type = (await question("Payment type for partial release (SOL/SPL): ")).trim().toUpperCase();
+    if (type === "SOL" || type === "SPL") {
+      paymentType = type;
+      break;
+    } else {
+      console.log("❌ Invalid payment type. Enter 'SOL' or 'SPL'.");
+    }
+  }
+  let escrowTokenAccount = null;
+  let exporterTokenAccount = null;
+  if (paymentType === "SPL") {
+    const escrowTokenStr = await question("Enter escrow's token account address: ");
+    escrowTokenAccount = new PublicKey(escrowTokenStr.trim());
+    const exporterTokenStr = await question("Enter exporter's token account address: ");
+    exporterTokenAccount = new PublicKey(exporterTokenStr.trim());
+  }
+  const amountStr = await question("Enter amount to release: ");
+  const amount = parseInt(amountStr.trim());
+  if (isNaN(amount) || amount <= 0) {
+    console.log("❌ Invalid amount.");
+    return;
+  }
+  try {
+    const method = program.methods.partialReleaseFunds(new anchor.BN(amount));
+    const accounts = {
+      order: order.publicKey,
+      signer: verifier.publicKey,
+      escrowPda,
+      exporter: exporter.publicKey,
+      systemProgram: SystemProgram.programId,
+    };
+    if (paymentType === "SPL") {
+      accounts.escrowTokenAccount = escrowTokenAccount;
+      accounts.exporterTokenAccount = exporterTokenAccount;
+      accounts.tokenProgram = anchor.utils.token.TOKEN_PROGRAM_ID;
+    }
+    await method.accounts(accounts).signers([verifier]).rpc();
+    console.log(`✅ Released ${amount} units to exporter.`);
+  } catch (error) {
+    if (error.message.includes("InvalidPartialAmount")) {
+      console.log("❌ Invalid partial release amount (too much or zero).");
+    } else {
+      console.log(`❌ Error: ${error.message}`);
+    }
+  }
+}
+
+async function partialRefund(order, escrowPda) {
+  if (!order || !escrowPda) {
+    console.log("❌ No order created yet. Please create an order first.");
+    return;
+  }
+  let paymentType;
+  while (true) {
+    const type = (await question("Payment type for partial refund (SOL/SPL): ")).trim().toUpperCase();
+    if (type === "SOL" || type === "SPL") {
+      paymentType = type;
+      break;
+    } else {
+      console.log("❌ Invalid payment type. Enter 'SOL' or 'SPL'.");
+    }
+  }
+  let escrowTokenAccount = null;
+  let importerTokenAccount = null;
+  if (paymentType === "SPL") {
+    const escrowTokenStr = await question("Enter escrow's token account address: ");
+    escrowTokenAccount = new PublicKey(escrowTokenStr.trim());
+    const importerTokenStr = await question("Enter importer's token account address: ");
+    importerTokenAccount = new PublicKey(importerTokenStr.trim());
+  }
+  const amountStr = await question("Enter amount to refund: ");
+  const amount = parseInt(amountStr.trim());
+  if (isNaN(amount) || amount <= 0) {
+    console.log("❌ Invalid amount.");
+    return;
+  }
+  const currentTime = Math.floor(Date.now() / 1000);
+  try {
+    const method = program.methods.partialRefund(new anchor.BN(amount), new anchor.BN(currentTime));
+    const accounts = {
+      order: order.publicKey,
+      escrowPda,
+      importer: importer.publicKey,
+      systemProgram: SystemProgram.programId,
+    };
+    if (paymentType === "SPL") {
+      accounts.escrowTokenAccount = escrowTokenAccount;
+      accounts.importerTokenAccount = importerTokenAccount;
+      accounts.tokenProgram = anchor.utils.token.TOKEN_PROGRAM_ID;
+    }
+    await method.accounts(accounts).signers([importer]).rpc();
+    console.log(`✅ Refunded ${amount} units to importer.`);
+  } catch (error) {
+    if (error.message.includes("InvalidPartialAmount")) {
+      console.log("❌ Invalid partial refund amount (too much or zero).");
+    } else {
+      console.log(`❌ Error: ${error.message}`);
+    }
+  }
+}
+
 async function main() {
   console.log("🚀 Starting Escrow Smart Contract Interface...");
   
@@ -869,7 +981,7 @@ async function main() {
   
   while (true) {
     await showMenu();
-    const choice = await question("Enter your choice (1-20): ");
+    const choice = await question("Enter your choice (1-22): ");
     
     try {
       switch (choice) {
@@ -980,6 +1092,12 @@ async function main() {
           console.log("👋 Goodbye!");
           rl.close();
           return;
+        case "21":
+          await partialReleaseFunds(currentOrder, currentEscrowPda);
+          break;
+        case "22":
+          await partialRefund(currentOrder, currentEscrowPda);
+          break;
         default:
           console.log("❌ Invalid choice. Please try again.");
       }
