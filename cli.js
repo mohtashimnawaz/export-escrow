@@ -131,10 +131,48 @@ function validateMetadata(metadata) {
 
 async function createOrder() {
   const order = Keypair.generate();
-  const amount = 0.1 * LAMPORTS_PER_SOL;
-  
+  let amount = 0.1 * LAMPORTS_PER_SOL;
+
+  // Prompt for payment type
+  let paymentType;
+  while (true) {
+    const type = (await question("Payment type (SOL/SPL): ")).trim().toUpperCase();
+    if (type === "SOL" || type === "SPL") {
+      paymentType = type;
+      break;
+    } else {
+      console.log("❌ Invalid payment type. Enter 'SOL' or 'SPL'.");
+    }
+  }
+
+  let tokenMint = null;
+  let importerTokenAccount = null;
+  let escrowTokenAccount = null;
+  if (paymentType === "SPL") {
+    // Prompt for SPL token mint
+    const mintStr = await question("Enter SPL token mint address: ");
+    tokenMint = new PublicKey(mintStr.trim());
+    // Prompt for importer token account
+    const importerTokenStr = await question("Enter importer's token account address: ");
+    importerTokenAccount = new PublicKey(importerTokenStr.trim());
+    // Prompt for escrow token account
+    const escrowTokenStr = await question("Enter escrow's token account address: ");
+    escrowTokenAccount = new PublicKey(escrowTokenStr.trim());
+    // Prompt for amount in tokens
+    const amountStr = await question("Enter amount (in tokens, not decimals): ");
+    amount = parseInt(amountStr.trim());
+    if (isNaN(amount) || amount <= 0) {
+      console.log("❌ Invalid amount.");
+      return null;
+    }
+  }
+
   console.log("📦 Creating escrow order...");
-  console.log(`💰 Amount: ${amount / LAMPORTS_PER_SOL} SOL`);
+  if (paymentType === "SOL") {
+    console.log(`💰 Amount: ${amount / LAMPORTS_PER_SOL} SOL`);
+  } else {
+    console.log(`💰 Amount: ${amount} tokens (mint: ${tokenMint.toString()})`);
+  }
   
   // Get metadata from user
   console.log("\n📝 Order Metadata:");
@@ -182,19 +220,27 @@ async function createOrder() {
   const escrowPda = (await getEscrowPda(order.publicKey, program.programId))[0];
   const creationTime = Math.floor(Date.now() / 1000);
   
-  await program.methods.createOrder(
+  const method = program.methods.createOrder(
     exporter.publicKey,
     verifier.publicKey,
     new anchor.BN(amount),
     new anchor.BN(proposedDeadline),
     new anchor.BN(creationTime),
-    metadata
-  ).accounts({
+    metadata,
+    tokenMint ? tokenMint : null
+  );
+  const accounts = {
     order: order.publicKey,
     importer: importer.publicKey,
     escrowPda,
     systemProgram: SystemProgram.programId,
-  }).signers([importer, order]).rpc();
+  };
+  if (paymentType === "SPL") {
+    accounts.importerTokenAccount = importerTokenAccount;
+    accounts.escrowTokenAccount = escrowTokenAccount;
+    accounts.tokenProgram = anchor.utils.token.TOKEN_PROGRAM_ID;
+  }
+  await method.accounts(accounts).signers([importer, order]).rpc();
   
   console.log("✅ Order created successfully!");
   console.log(`📋 Order ID: ${order.publicKey.toString()}`);
@@ -293,19 +339,40 @@ async function shipGoods(order) {
 
 async function confirmDelivery(order, escrowPda) {
   console.log("✅ Confirming delivery...");
-  
+  // Prompt for payment type
+  let paymentType;
+  while (true) {
+    const type = (await question("Payment type for delivery (SOL/SPL): ")).trim().toUpperCase();
+    if (type === "SOL" || type === "SPL") {
+      paymentType = type;
+      break;
+    } else {
+      console.log("❌ Invalid payment type. Enter 'SOL' or 'SPL'.");
+    }
+  }
+  let escrowTokenAccount = null;
+  let exporterTokenAccount = null;
+  if (paymentType === "SPL") {
+    const escrowTokenStr = await question("Enter escrow's token account address: ");
+    escrowTokenAccount = new PublicKey(escrowTokenStr.trim());
+    const exporterTokenStr = await question("Enter exporter's token account address: ");
+    exporterTokenAccount = new PublicKey(exporterTokenStr.trim());
+  }
   try {
-    await program.methods.confirmDelivery()
-      .accounts({
-        order: order.publicKey,
-        signer: verifier.publicKey,
-        escrowPda,
-        exporter: exporter.publicKey,
-        systemProgram: SystemProgram.programId,
-      })
-      .signers([verifier])
-      .rpc();
-    
+    const method = program.methods.confirmDelivery();
+    const accounts = {
+      order: order.publicKey,
+      signer: verifier.publicKey,
+      escrowPda,
+      exporter: exporter.publicKey,
+      systemProgram: SystemProgram.programId,
+    };
+    if (paymentType === "SPL") {
+      accounts.escrowTokenAccount = escrowTokenAccount;
+      accounts.exporterTokenAccount = exporterTokenAccount;
+      accounts.tokenProgram = anchor.utils.token.TOKEN_PROGRAM_ID;
+    }
+    await method.accounts(accounts).signers([verifier]).rpc();
     console.log("✅ Delivery confirmed and funds automatically released to exporter!");
   } catch (error) {
     if (error.message.includes("DeadlinePassed")) {
@@ -329,9 +396,26 @@ async function getSolanaTime() {
 
 async function checkDeadlineAndRefund(order, escrowPda) {
   console.log("⏰ Checking deadline and processing refund if needed...");
-  
+  // Prompt for payment type
+  let paymentType;
+  while (true) {
+    const type = (await question("Payment type for refund (SOL/SPL): ")).trim().toUpperCase();
+    if (type === "SOL" || type === "SPL") {
+      paymentType = type;
+      break;
+    } else {
+      console.log("❌ Invalid payment type. Enter 'SOL' or 'SPL'.");
+    }
+  }
+  let escrowTokenAccount = null;
+  let importerTokenAccount = null;
+  if (paymentType === "SPL") {
+    const escrowTokenStr = await question("Enter escrow's token account address: ");
+    escrowTokenAccount = new PublicKey(escrowTokenStr.trim());
+    const importerTokenStr = await question("Enter importer's token account address: ");
+    importerTokenAccount = new PublicKey(importerTokenStr.trim());
+  }
   try {
-    // First, let's get the order details to debug
     const orderAccount = await program.account.order.fetch(order.publicKey);
     const localTime = Math.floor(Date.now() / 1000);
     
@@ -344,14 +428,19 @@ async function checkDeadlineAndRefund(order, escrowPda) {
     console.log(`Is deadline passed? ${localTime > orderAccount.approvedDeadline ? 'YES' : 'NO'}`);
     console.log(`Is state not completed? ${orderAccount.state.completed !== undefined ? 'NO (completed)' : 'YES (not completed)'}`);
     
-    await program.methods.checkDeadlineAndRefund(new anchor.BN(localTime))
-      .accounts({
-        order: order.publicKey,
-        escrowPda,
-        importer: importer.publicKey,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
+    const method = program.methods.checkDeadlineAndRefund(new anchor.BN(localTime));
+    const accounts = {
+      order: order.publicKey,
+      escrowPda,
+      importer: importer.publicKey,
+      systemProgram: SystemProgram.programId,
+    };
+    if (paymentType === "SPL") {
+      accounts.escrowTokenAccount = escrowTokenAccount;
+      accounts.importerTokenAccount = importerTokenAccount;
+      accounts.tokenProgram = anchor.utils.token.TOKEN_PROGRAM_ID;
+    }
+    await method.accounts(accounts).rpc();
     
     console.log("✅ Refund automatically processed to importer!");
   } catch (error) {
@@ -372,10 +461,22 @@ async function showBalances() {
   const importerBalance = await program.provider.connection.getBalance(importer.publicKey);
   const exporterBalance = await program.provider.connection.getBalance(exporter.publicKey);
   const verifierBalance = await program.provider.connection.getBalance(verifier.publicKey);
-  
   console.log(`👤 Importer: ${importerBalance / LAMPORTS_PER_SOL} SOL`);
   console.log(`📦 Exporter: ${exporterBalance / LAMPORTS_PER_SOL} SOL`);
   console.log(`✅ Verifier: ${verifierBalance / LAMPORTS_PER_SOL} SOL`);
+  // Optionally, prompt for SPL token accounts to show token balances
+  const showTokens = (await question("Show SPL token balances? (y/n): ")).trim().toLowerCase();
+  if (showTokens === 'y') {
+    const tokenAccountStr = await question("Enter SPL token account address to check: ");
+    const tokenAccount = new PublicKey(tokenAccountStr.trim());
+    try {
+      const tokenAccInfo = await program.provider.connection.getParsedAccountInfo(tokenAccount);
+      const amount = tokenAccInfo.value.data.parsed.info.tokenAmount.uiAmount;
+      console.log(`💎 SPL Token Account ${tokenAccount.toString()}: ${amount}`);
+    } catch (e) {
+      console.log("❌ Could not fetch SPL token account balance.");
+    }
+  }
 }
 
 async function viewOrderDetails(order) {
@@ -383,17 +484,23 @@ async function viewOrderDetails(order) {
     console.log("❌ No order created yet. Please create an order first.");
     return;
   }
-  
   try {
     const orderAccount = await program.account.order.fetch(order.publicKey);
     const localTime = Math.floor(Date.now() / 1000);
-    
     console.log("\n📋 Order Details:");
     console.log(`Order ID: ${order.publicKey.toString()}`);
     console.log(`Importer: ${orderAccount.importer.toString()}`);
     console.log(`Exporter: ${orderAccount.exporter.toString()}`);
     console.log(`Verifier: ${orderAccount.verifier.toString()}`);
-    console.log(`Amount: ${orderAccount.amount / LAMPORTS_PER_SOL} SOL`);
+    // Show payment type
+    if (orderAccount.tokenMint === null || orderAccount.tokenMint === undefined) {
+      console.log(`Payment Type: SOL`);
+      console.log(`Amount: ${orderAccount.amount / LAMPORTS_PER_SOL} SOL`);
+    } else {
+      console.log(`Payment Type: SPL Token`);
+      console.log(`Token Mint: ${orderAccount.tokenMint.toString()}`);
+      console.log(`Amount: ${orderAccount.amount} tokens`);
+    }
     console.log(`State: ${JSON.stringify(orderAccount.state)}`);
     console.log(`Created at: ${formatDeadline(orderAccount.createdAt)}`);
     console.log(`Proposed deadline: ${formatDeadline(orderAccount.proposedDeadline)}`);
