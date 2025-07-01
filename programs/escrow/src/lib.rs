@@ -96,14 +96,18 @@ pub mod escrow {
                 )?;
             },
             Some(_mint) => {
+                // Ensure SPL accounts are present
+                let importer_token_account = ctx.accounts.importer_token_account.as_ref().ok_or(EscrowError::MissingSPLAccount)?;
+                let escrow_token_account = ctx.accounts.escrow_token_account.as_ref().ok_or(EscrowError::MissingSPLAccount)?;
+                let token_program = ctx.accounts.token_program.as_ref().ok_or(EscrowError::MissingSPLAccount)?;
                 // Transfer SPL tokens
                 let cpi_accounts = token::Transfer {
-                    from: ctx.accounts.importer_token_account.as_ref().unwrap().to_account_info(),
-                    to: ctx.accounts.escrow_token_account.as_ref().unwrap().to_account_info(),
+                    from: importer_token_account.to_account_info(),
+                    to: escrow_token_account.to_account_info(),
                     authority: ctx.accounts.importer.to_account_info(),
                 };
                 let cpi_ctx = CpiContext::new(
-                    ctx.accounts.token_program.as_ref().unwrap().to_account_info(),
+                    token_program.to_account_info(),
                     cpi_accounts,
                 );
                 token::transfer(cpi_ctx, amount)?;
@@ -677,8 +681,8 @@ pub struct CreateOrder<'info> {
     )]
     pub escrow_pda: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
-    // SPL token support
-    #[account(mut, constraint = importer_token_account.owner == importer.key() @ EscrowError::Unauthorized)]
+    // SPL token support (no constraints here)
+    #[account(mut)]
     pub importer_token_account: Option<Account<'info, TokenAccount>>,
     #[account(mut)]
     pub escrow_token_account: Option<Account<'info, TokenAccount>>,
@@ -950,4 +954,6 @@ pub enum EscrowError {
     ExtensionAlreadyRequested,
     #[msg("Invalid partial release/refund amount")] 
     InvalidPartialAmount,
+    #[msg("Missing SPL token account(s) for SPL payment")] 
+    MissingSPLAccount,
 }

@@ -242,6 +242,14 @@ async function createOrder() {
       escrowTokenAccount,
       tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
     };
+  } else {
+    // Workaround: Anchor JS expects these accounts, so provide dummy values
+    accounts = {
+      ...accounts,
+      importerTokenAccount: order.publicKey,
+      escrowTokenAccount: order.publicKey,
+      tokenProgram: SystemProgram.programId,
+    };
   }
   console.log("[DEBUG] Accounts object for createOrder:", accounts);
   await method.accounts(accounts).signers([importer, order]).rpc();
