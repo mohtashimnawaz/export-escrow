@@ -133,6 +133,12 @@ export function CreateOrderModal({ onClose, onOrderCreated }: CreateOrderModalPr
           importer: publicKey,
           escrowPda,
           systemProgram: SystemProgram.programId,
+          // For SOL transfers, these are not used but may be required by Anchor
+          importerTokenAccount: SystemProgram.programId,
+          escrowTokenAccount: SystemProgram.programId,
+          tokenMint: SystemProgram.programId,
+          tokenProgram: SystemProgram.programId,
+          rent: SystemProgram.programId,
         })
         .signers([orderKeypair])
         .rpc();
