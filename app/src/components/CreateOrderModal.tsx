@@ -138,26 +138,19 @@ export function CreateOrderModal({ onClose, onOrderCreated }: CreateOrderModalPr
       };
       
       const tx = await program.methods
-        .createOrder(
+        .createSolOrder(
           new PublicKey(formData.exporterAddress),
           new PublicKey(formData.verifierAddress),
           amount,
           deadline,
           creation_time,
-          metadata,
-          null
+          metadata
         )
         .accounts({
           order: orderKeypair.publicKey,
           importer: publicKey,
           escrowPda,
           systemProgram: SystemProgram.programId,
-          // For SOL transfers, these are not used but must be valid program IDs
-          importerTokenAccount: SystemProgram.programId,
-          escrowTokenAccount: SystemProgram.programId,
-          tokenMint: SystemProgram.programId,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          rent: SystemProgram.programId,
         })
         .signers([orderKeypair])
         .rpc();

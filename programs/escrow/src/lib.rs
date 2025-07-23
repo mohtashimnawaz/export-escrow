@@ -30,15 +30,14 @@ pub struct OrderMetadata {
 pub mod escrow {
     use super::*;
 
-    pub fn create_order(
-        ctx: Context<CreateOrder>,
+    pub fn create_sol_order(
+        ctx: Context<CreateSolOrder>,
         exporter: Pubkey,
         verifier: Pubkey,
         amount: u64,
         proposed_deadline: i64,
         creation_time: i64,
         metadata: OrderMetadata,
-        token_mint: Option<Pubkey>,
     ) -> Result<()> {
         // Validate deadline range
         let time_until_deadline = proposed_deadline - creation_time;
@@ -60,59 +59,101 @@ pub mod escrow {
         order.state = OrderState::PendingDeadlineApproval;
         order.created_at = creation_time;
         order.proposed_deadline = proposed_deadline;
-        order.approved_deadline = 0; // Will be set when importer approves
+        order.approved_deadline = 0;
         order.deadline_approved = false;
         order.extension_requested = false;
         order.extension_deadline = 0;
         order.bill_of_lading_hash = [0u8; 32];
-        order.token_mint = token_mint;
+        order.token_mint = None; // Explicitly SOL transfer
         order.history = Vec::new();
         order.metadata = metadata;
         order.last_updated = creation_time;
         
-        // Add initial history entry
         order.add_history_entry(
             OrderState::PendingDeadlineApproval,
             "Order created - waiting for deadline approval".to_string(),
             creation_time,
         );
         
-        // Transfer funds from importer to escrow PDA/token account
-        match order.token_mint {
-            None => {
-                // Transfer SOL
-                let ix = system_instruction::transfer(
-                    ctx.accounts.importer.key,
-                    ctx.accounts.escrow_pda.key,
-                    amount,
-                );
-                invoke(
-                    &ix,
-                    &[
-                        ctx.accounts.importer.to_account_info(),
-                        ctx.accounts.escrow_pda.to_account_info(),
-                        ctx.accounts.system_program.to_account_info(),
-                    ],
-                )?;
-            },
-            Some(_mint) => {
-                // Ensure SPL accounts are present
-                let importer_token_account = ctx.accounts.importer_token_account.as_ref().ok_or(EscrowError::MissingSPLAccount)?;
-                let escrow_token_account = ctx.accounts.escrow_token_account.as_ref().ok_or(EscrowError::MissingSPLAccount)?;
-                let token_program = ctx.accounts.token_program.as_ref().ok_or(EscrowError::MissingSPLAccount)?;
-                // Transfer SPL tokens
-                let cpi_accounts = token::Transfer {
-                    from: importer_token_account.to_account_info(),
-                    to: escrow_token_account.to_account_info(),
-                    authority: ctx.accounts.importer.to_account_info(),
-                };
-                let cpi_ctx = CpiContext::new(
-                    token_program.to_account_info(),
-                    cpi_accounts,
-                );
-                token::transfer(cpi_ctx, amount)?;
-            }
-        }
+        // Transfer SOL
+        let ix = system_instruction::transfer(
+            ctx.accounts.importer.key,
+            ctx.accounts.escrow_pda.key,
+            amount,
+        );
+        invoke(
+            &ix,
+            &[
+                ctx.accounts.importer.to_account_info(),
+                ctx.accounts.escrow_pda.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+        )?;
+        
+        Ok(())
+    }
+
+    pub fn create_spl_order(
+        ctx: Context<CreateSplOrder>,
+        exporter: Pubkey,
+        verifier: Pubkey,
+        amount: u64,
+        proposed_deadline: i64,
+        creation_time: i64,
+        metadata: OrderMetadata,
+    ) -> Result<()> {
+        // This function now specifically handles SPL tokens.
+        // The token_mint is derived from the context.
+        let token_mint_key = ctx.accounts.token_mint.key();
+
+        // Validate deadline range
+        let time_until_deadline = proposed_deadline - creation_time;
+        
+        require!(
+            time_until_deadline >= MIN_DEADLINE,
+            EscrowError::DeadlineTooShort
+        );
+        require!(
+            time_until_deadline <= MAX_DEADLINE,
+            EscrowError::DeadlineTooLong
+        );
+        
+        let order = &mut ctx.accounts.order;
+        order.importer = *ctx.accounts.importer.key;
+        order.exporter = exporter;
+        order.verifier = verifier;
+        order.amount = amount;
+        order.state = OrderState::PendingDeadlineApproval;
+        order.created_at = creation_time;
+        order.proposed_deadline = proposed_deadline;
+        order.approved_deadline = 0;
+        order.deadline_approved = false;
+        order.extension_requested = false;
+        order.extension_deadline = 0;
+        order.bill_of_lading_hash = [0u8; 32];
+        order.token_mint = Some(token_mint_key);
+        order.history = Vec::new();
+        order.metadata = metadata;
+        order.last_updated = creation_time;
+        
+        order.add_history_entry(
+            OrderState::PendingDeadlineApproval,
+            "Order created - waiting for deadline approval".to_string(),
+            creation_time,
+        );
+        
+        // Transfer SPL tokens
+        let cpi_accounts = token::Transfer {
+            from: ctx.accounts.importer_token_account.to_account_info(),
+            to: ctx.accounts.escrow_token_account.to_account_info(),
+            authority: ctx.accounts.importer.to_account_info(),
+        };
+        let cpi_ctx = CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            cpi_accounts,
+        );
+        token::transfer(cpi_ctx, amount)?;
+        
         Ok(())
     }
 
@@ -670,30 +711,45 @@ pub mod escrow {
 }
 
 #[derive(Accounts)]
-pub struct CreateOrder<'info> {
-    #[account(init, payer = importer, space = 8 + Order::LEN)]
+pub struct CreateSolOrder<'info> {
+    #[account(init, payer = importer, space = Order::LEN)]
     pub order: Account<'info, Order>,
     #[account(mut)]
     pub importer: Signer<'info>,
-    /// CHECK: This is the escrow PDA
-    #[account(
-        mut,
-        seeds = [b"escrow_pda", order.key().as_ref()],
-        bump
-    )]
-    pub escrow_pda: UncheckedAccount<'info>,
+    /// CHECK: This is not dangerous because we are only transferring SOL to it.
+    #[account(mut)]
+    pub escrow_pda: AccountInfo<'info>,
     pub system_program: Program<'info, System>,
-    // SPL token support (no constraints here)
-    #[account(mut)]
-    pub importer_token_account: Option<Account<'info, TokenAccount>>,
-    #[account(mut)]
-    pub escrow_token_account: Option<Account<'info, TokenAccount>>,
-    pub token_program: Option<Program<'info, Token>>,
 }
 
 #[derive(Accounts)]
-pub struct ShipGoods<'info> {
+pub struct CreateSplOrder<'info> {
+    #[account(init, payer = importer, space = Order::LEN)]
+    pub order: Account<'info, Order>,
     #[account(mut)]
+    pub importer: Signer<'info>,
+    #[account(mut)]
+    pub importer_token_account: Account<'info, TokenAccount>,
+    #[account(
+        init,
+        payer = importer,
+        token::mint = token_mint,
+        token::authority = escrow_pda,
+    )]
+    pub escrow_token_account: Account<'info, TokenAccount>,
+    /// CHECK: This is not dangerous because we are only using it as a PDA seed.
+    #[account(mut)]
+    pub escrow_pda: AccountInfo<'info>,
+    pub token_mint: Account<'info, token::Mint>,
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+    pub rent: Sysvar<'info, Rent>,
+}
+
+
+#[derive(Accounts)]
+pub struct ShipGoods<'info> {
+    #[account(mut, has_one = exporter)]
     pub order: Account<'info, Order>,
     pub exporter: Signer<'info>,
 }
