@@ -6,6 +6,7 @@ import { PublicKey, Keypair, SystemProgram, LAMPORTS_PER_SOL } from '@solana/web
 import { Program, AnchorProvider, BN } from '@coral-xyz/anchor';
 import { X, User, Shield } from 'lucide-react';
 import { Order } from '@/types/escrow';
+import { useNotifications } from './Notifications';
 import escrowIdl from '@/idl/escrow.json';
 
 interface CreateOrderModalProps {
@@ -17,6 +18,7 @@ export function CreateOrderModal({ onClose, onOrderCreated }: CreateOrderModalPr
   const { connection } = useConnection();
   const { publicKey, signTransaction, signAllTransactions } = useWallet();
   const [loading, setLoading] = useState(false);
+  const { success, error } = useNotifications();
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -41,6 +43,20 @@ export function CreateOrderModal({ onClose, onOrderCreated }: CreateOrderModalPr
     return new Program(escrowIdl as Program['idl'], provider);
   };
 
+  const fillSampleData = () => {
+    setFormData({
+      title: 'Electronics Import Order',
+      description: 'Import of electronic components including microcontrollers, sensors, and LED displays for manufacturing.',
+      category: 'electronics',
+      tags: 'urgent, high-value, fragile',
+      exporterAddress: 'DfXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjb',
+      verifierAddress: '4fYNw3dojWmQ3dTHTHNGrMGqaNi7k2mXpbXbPULBNsXb',
+      amount: '25.5',
+      deadlineDays: '14',
+      deadlineHours: '0',
+    });
+  };
+
   const validateAddress = (address: string): boolean => {
     try {
       new PublicKey(address);
@@ -54,24 +70,24 @@ export function CreateOrderModal({ onClose, onOrderCreated }: CreateOrderModalPr
     e.preventDefault();
     
     if (!publicKey || !signTransaction || !signAllTransactions) {
-      alert('Please connect your wallet first');
+      error('Wallet Not Connected', 'Please connect your wallet first');
       return;
     }
 
     // Validate addresses
     if (!validateAddress(formData.exporterAddress)) {
-      alert('Please enter a valid exporter wallet address');
+      error('Invalid Address', 'Please enter a valid exporter wallet address');
       return;
     }
 
     if (!validateAddress(formData.verifierAddress)) {
-      alert('Please enter a valid verifier wallet address');
+      error('Invalid Address', 'Please enter a valid verifier wallet address');
       return;
     }
 
     const program = getProgram();
     if (!program) {
-      alert('Failed to initialize program');
+      error('Program Error', 'Failed to initialize escrow program');
       return;
     }
 
@@ -133,11 +149,13 @@ export function CreateOrderModal({ onClose, onOrderCreated }: CreateOrderModalPr
         tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag)
       };
 
+      success('Order Created', `Order "${formData.title}" has been created successfully!`);
       onOrderCreated(newOrder);
       
-    } catch (error) {
-      console.error('Error creating order:', error);
-      alert('Failed to create order: ' + (error as Error).message);
+    } catch (err) {
+      console.error('Error creating order:', err);
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
+      error('Transaction Failed', `Failed to create order: ${errorMsg}`);
     } finally {
       setLoading(false);
     }
@@ -148,12 +166,21 @@ export function CreateOrderModal({ onClose, onOrderCreated }: CreateOrderModalPr
       <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-gray-900">Create New Order</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            <X className="h-6 w-6" />
-          </button>
+          <div className="flex items-center space-x-3">
+            <button
+              type="button"
+              onClick={fillSampleData}
+              className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1 rounded-md"
+            >
+              Fill Sample Data
+            </button>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <X className="h-6 w-6" />
+            </button>
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -233,9 +260,16 @@ export function CreateOrderModal({ onClose, onOrderCreated }: CreateOrderModalPr
                 required
                 value={formData.exporterAddress}
                 onChange={(e) => setFormData({...formData, exporterAddress: e.target.value})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Solana public key"
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+                  formData.exporterAddress && !validateAddress(formData.exporterAddress)
+                    ? 'border-red-300 focus:ring-red-500' 
+                    : 'border-gray-300 focus:ring-blue-500'
+                }`}
+                placeholder="DfXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjb"
               />
+              {formData.exporterAddress && !validateAddress(formData.exporterAddress) && (
+                <p className="mt-1 text-sm text-red-600">Invalid Solana address</p>
+              )}
             </div>
 
             <div>
@@ -248,9 +282,16 @@ export function CreateOrderModal({ onClose, onOrderCreated }: CreateOrderModalPr
                 required
                 value={formData.verifierAddress}
                 onChange={(e) => setFormData({...formData, verifierAddress: e.target.value})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Solana public key"
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+                  formData.verifierAddress && !validateAddress(formData.verifierAddress)
+                    ? 'border-red-300 focus:ring-red-500' 
+                    : 'border-gray-300 focus:ring-blue-500'
+                }`}
+                placeholder="4fYNw3dojWmQ3dTHTHNGrMGqaNi7k2mXpbXbPULBNsXb"
               />
+              {formData.verifierAddress && !validateAddress(formData.verifierAddress) && (
+                <p className="mt-1 text-sm text-red-600">Invalid Solana address</p>
+              )}
             </div>
           </div>
 
