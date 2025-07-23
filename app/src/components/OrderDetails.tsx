@@ -115,7 +115,7 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
               signer: publicKey,
               escrowPda,
               exporter: new PublicKey(order.exporter),
-              systemProgram: program.provider.publicKey,
+              systemProgram: SystemProgram.programId,
             })
             .rpc();
           break;
