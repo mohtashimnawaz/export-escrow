@@ -16,6 +16,7 @@ import {
 import { CreateOrderModal } from './CreateOrderModal';
 import { OrdersList } from './OrdersList';
 import { OrderDetails } from './OrderDetails';
+import { OrderActions } from './OrderActions';
 import { Order as EscrowOrder } from '@/types/escrow';
 import { sampleOrders, getOrderStatistics } from '@/utils/sampleData';
 
@@ -55,6 +56,19 @@ export function EscrowDashboard() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [orders, setOrders] = useState<Order[]>(sampleOrders);
+
+  const handleOrderCreated = (newOrder: Order) => {
+    setOrders(prevOrders => [newOrder, ...prevOrders]);
+    setSelectedOrder(newOrder);
+    setShowCreateModal(false);
+  };
+
+  const handleOrderAction = (updatedOrder: Order) => {
+    setOrders(prevOrders => 
+      prevOrders.map(o => o.id === updatedOrder.id ? updatedOrder : o)
+    );
+    setSelectedOrder(updatedOrder);
+  };
 
   const tabs = [
     { id: 'all', name: 'All Orders', icon: Package },
@@ -210,14 +224,18 @@ export function EscrowDashboard() {
           {/* Main Content */}
           <div className="flex-1">
             {selectedOrder ? (
-              <OrderDetails 
-                order={selectedOrder} 
-                onBack={() => setSelectedOrder(null)}
-                onUpdate={(updatedOrder: Order) => {
-                  setOrders(orders.map(o => o.id === updatedOrder.id ? updatedOrder : o));
-                  setSelectedOrder(updatedOrder);
-                }}
-              />
+              <div className="p-6 bg-white/80 backdrop-blur-sm rounded-lg shadow-md">
+                <OrderDetails 
+                  order={selectedOrder} 
+                  onClose={() => setSelectedOrder(null)} 
+                  getStateColor={getStateColor}
+                  getStateIcon={getStateIcon}
+                />
+                <OrderActions 
+                  order={selectedOrder}
+                  onAction={handleOrderAction}
+                />
+              </div>
             ) : (
               <OrdersList 
                 orders={orders}
@@ -236,10 +254,7 @@ export function EscrowDashboard() {
       {showCreateModal && (
         <CreateOrderModal
           onClose={() => setShowCreateModal(false)}
-          onOrderCreated={(newOrder: Order) => {
-            setOrders([...orders, newOrder]);
-            setShowCreateModal(false);
-          }}
+          onOrderCreated={handleOrderCreated}
         />
       )}
     </div>
