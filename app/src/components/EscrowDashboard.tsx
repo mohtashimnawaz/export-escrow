@@ -16,7 +16,6 @@ import {
 import { CreateOrderModal } from './CreateOrderModal';
 import { OrdersList } from './OrdersList';
 import { OrderDetails } from './OrderDetails';
-import { OrderActions } from './OrderActions';
 import { Order as EscrowOrder } from '@/types/escrow';
 import { sampleOrders, getOrderStatistics } from '@/utils/sampleData';
 
@@ -227,13 +226,8 @@ export function EscrowDashboard() {
               <div className="p-6 bg-white/80 backdrop-blur-sm rounded-lg shadow-md">
                 <OrderDetails 
                   order={selectedOrder} 
-                  onClose={() => setSelectedOrder(null)} 
-                  getStateColor={getStateColor}
-                  getStateIcon={getStateIcon}
-                />
-                <OrderActions 
-                  order={selectedOrder}
-                  onAction={handleOrderAction}
+                  onBack={() => setSelectedOrder(null)}
+                  onUpdate={handleOrderAction}
                 />
               </div>
             ) : (
