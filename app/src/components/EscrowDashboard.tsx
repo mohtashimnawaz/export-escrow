@@ -210,7 +210,7 @@ export function EscrowDashboard() {
       {showCreateModal && (
         <CreateOrderModal
           onClose={() => setShowCreateModal(false)}
-          onOrderCreated={(newOrder) => {
+          onOrderCreated={(newOrder: Order) => {
             setOrders([...orders, newOrder]);
             setShowCreateModal(false);
           }}
