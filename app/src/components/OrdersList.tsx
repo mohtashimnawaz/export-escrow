@@ -3,21 +3,7 @@
 import React from 'react';
 import { format } from 'date-fns';
 import { ChevronRight, Search } from 'lucide-react';
-
-interface Order {
-  id: string;
-  title: string;
-  amount: number;
-  state: string;
-  importer: string;
-  exporter: string;
-  verifier: string;
-  createdAt: number;
-  deadline: number;
-  description: string;
-  category: string;
-  tags: string[];
-}
+import { Order } from '@/types/escrow';
 
 interface OrdersListProps {
   orders: Order[];
@@ -25,7 +11,7 @@ interface OrdersListProps {
   currentUser: string;
   onSelectOrder: (order: Order) => void;
   getStateColor: (state: string) => string;
-  getStateIcon: (state: string) => React.ComponentType<any>;
+  getStateIcon: (state: string) => React.ComponentType<{ className?: string }>;
 }
 
 export function OrdersList({ 

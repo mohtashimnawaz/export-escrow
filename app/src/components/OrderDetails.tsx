@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
-import { PublicKey, LAMPORTS_PER_SOL, SystemProgram } from '@solana/web3.js';
+import { PublicKey, SystemProgram } from '@solana/web3.js';
 import { Program, AnchorProvider, BN } from '@coral-xyz/anchor';
 import { format } from 'date-fns';
 import { 
@@ -14,13 +14,26 @@ import {
   Package,
   CheckCircle,
   AlertTriangle,
-  DollarSign,
   Calendar,
-  MessageCircle,
-  FileText,
-  Edit
+  FileText
 } from 'lucide-react';
+import { Order as EscrowOrder } from '@/types/escrow';
 import escrowIdl from '@/idl/escrow.json';
+
+interface Order {
+  id: string;
+  title: string;
+  amount: number;
+  state: string;
+  importer: string;
+  exporter: string;
+  verifier: string;
+  createdAt: number;
+  deadline: number;
+  description: string;
+  category: string;
+  tags: string[];
+}
 
 interface Order {
   id: string;
@@ -48,7 +61,7 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
   const { publicKey, signTransaction, signAllTransactions } = useWallet();
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState<string | null>(null);
-  const [modalData, setModalData] = useState<any>({});
+  const [modalData, setModalData] = useState<Record<string, unknown>>({});
 
   const getProgram = () => {
     if (!publicKey || !signTransaction || !signAllTransactions) return null;
@@ -59,7 +72,7 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
       { commitment: 'confirmed' }
     );
     
-    return new Program(escrowIdl as any, provider);
+    return new Program(escrowIdl as Program['idl'], provider);
   };
 
   const getCurrentUserRole = () => {
@@ -71,7 +84,7 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
     return null;
   };
 
-  const executeTransaction = async (instruction: string, params: any = {}) => {
+  const executeTransaction = async (instruction: string, params: Record<string, unknown> = {}) => {
     const program = getProgram();
     if (!program || !publicKey) return;
 
@@ -121,8 +134,9 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
           break;
 
         case 'disputeOrder':
+          const reason = params.reason as string;
           tx = await program.methods
-            .disputeOrder(params.reason, new BN(Math.floor(Date.now() / 1000)))
+            .disputeOrder(reason, new BN(Math.floor(Date.now() / 1000)))
             .accounts({
               order: orderPubkey,
               signer: publicKey,
@@ -131,8 +145,9 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
           break;
 
         case 'resolveDispute':
+          const resolution = params.resolution as string;
           tx = await program.methods
-            .resolveDispute(params.resolution, new BN(Math.floor(Date.now() / 1000)))
+            .resolveDispute(resolution, new BN(Math.floor(Date.now() / 1000)))
             .accounts({
               order: orderPubkey,
               verifier: publicKey,
@@ -141,7 +156,8 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
           break;
 
         case 'requestExtension':
-          const newDeadline = new BN(Math.floor(Date.now() / 1000) + params.extensionDays * 24 * 60 * 60);
+          const extensionDays = params.extensionDays as number;
+          const newDeadline = new BN(Math.floor(Date.now() / 1000) + extensionDays * 24 * 60 * 60);
           tx = await program.methods
             .requestDeadlineExtension(newDeadline, new BN(Math.floor(Date.now() / 1000)))
             .accounts({
@@ -305,7 +321,7 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
           {showModal === 'disputeOrder' && (
             <textarea
               placeholder="Reason for dispute..."
-              value={modalData.reason || ''}
+              value={(modalData.reason as string) || ''}
               onChange={(e) => setModalData({ ...modalData, reason: e.target.value })}
               className="w-full p-3 border rounded-md"
               rows={4}
@@ -315,7 +331,7 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
           {showModal === 'resolveDispute' && (
             <textarea
               placeholder="Resolution details..."
-              value={modalData.resolution || ''}
+              value={(modalData.resolution as string) || ''}
               onChange={(e) => setModalData({ ...modalData, resolution: e.target.value })}
               className="w-full p-3 border rounded-md"
               rows={4}
@@ -329,7 +345,7 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
                 type="number"
                 min="1"
                 max="30"
-                value={modalData.extensionDays || ''}
+                value={(modalData.extensionDays as number) || ''}
                 onChange={(e) => setModalData({ ...modalData, extensionDays: parseInt(e.target.value) })}
                 className="w-full p-3 border rounded-md"
               />

@@ -2,14 +2,15 @@
 
 import React, { useState } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
-import { PublicKey, Keypair, LAMPORTS_PER_SOL } from '@solana/web3.js';
-import { Program, AnchorProvider, web3, BN } from '@coral-xyz/anchor';
-import { X, User, Shield, Package } from 'lucide-react';
+import { PublicKey, Keypair, SystemProgram, LAMPORTS_PER_SOL } from '@solana/web3.js';
+import { Program, AnchorProvider, BN } from '@coral-xyz/anchor';
+import { X, User, Shield } from 'lucide-react';
+import { Order } from '@/types/escrow';
 import escrowIdl from '@/idl/escrow.json';
 
 interface CreateOrderModalProps {
   onClose: () => void;
-  onOrderCreated: (order: any) => void;
+  onOrderCreated: (order: Order) => void;
 }
 
 export function CreateOrderModal({ onClose, onOrderCreated }: CreateOrderModalProps) {
@@ -28,87 +29,112 @@ export function CreateOrderModal({ onClose, onOrderCreated }: CreateOrderModalPr
     deadlineHours: '0',
   });
 
+  const getProgram = () => {
+    if (!publicKey || !signTransaction || !signAllTransactions) return null;
+    
+    const provider = new AnchorProvider(
+      connection,
+      { publicKey, signTransaction, signAllTransactions },
+      { commitment: 'confirmed' }
+    );
+    
+    return new Program(escrowIdl as Program['idl'], provider);
+  };
+
+  const validateAddress = (address: string): boolean => {
+    try {
+      new PublicKey(address);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!publicKey || !signTransaction || !signAllTransactions) return;
+    
+    if (!publicKey || !signTransaction || !signAllTransactions) {
+      alert('Please connect your wallet first');
+      return;
+    }
+
+    // Validate addresses
+    if (!validateAddress(formData.exporterAddress)) {
+      alert('Please enter a valid exporter wallet address');
+      return;
+    }
+
+    if (!validateAddress(formData.verifierAddress)) {
+      alert('Please enter a valid verifier wallet address');
+      return;
+    }
+
+    const program = getProgram();
+    if (!program) {
+      alert('Failed to initialize program');
+      return;
+    }
 
     setLoading(true);
+    
     try {
-      // Create provider
-      const provider = new AnchorProvider(
-        connection,
-        { publicKey, signTransaction, signAllTransactions },
-        { commitment: 'confirmed' }
-      );
-
-      // Create program instance
-      const program = new Program(escrowIdl as any, provider);
-
-      // Generate order keypair
+      // Generate a new keypair for the order
       const orderKeypair = Keypair.generate();
-
-      // Calculate escrow PDA
+      
+      // Find PDA for escrow
       const [escrowPda] = PublicKey.findProgramAddressSync(
         [Buffer.from('escrow_pda'), orderKeypair.publicKey.toBuffer()],
         program.programId
       );
 
-      // Prepare metadata
-      const metadata = {
-        title: formData.title,
-        description: formData.description,
-        tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
-        category: formData.category,
-      };
-
-      // Calculate timestamps
-      const creationTime = Math.floor(Date.now() / 1000);
-      const deadlineSeconds = parseInt(formData.deadlineDays) * 24 * 60 * 60 + 
-                             parseInt(formData.deadlineHours) * 60 * 60;
-      const proposedDeadline = creationTime + deadlineSeconds;
-
-      // Convert amount to lamports
+      // Calculate deadline timestamp
+      const deadlineMs = Date.now() + 
+        (parseInt(formData.deadlineDays) * 24 * 60 * 60 * 1000) + 
+        (parseInt(formData.deadlineHours) * 60 * 60 * 1000);
+      
       const amount = new BN(parseFloat(formData.amount) * LAMPORTS_PER_SOL);
-
-      // Create transaction
+      const deadline = new BN(Math.floor(deadlineMs / 1000));
+      
       const tx = await program.methods
         .createOrder(
+          formData.title,
+          formData.description,
+          amount,
+          deadline,
           new PublicKey(formData.exporterAddress),
           new PublicKey(formData.verifierAddress),
-          amount,
-          new BN(proposedDeadline),
-          new BN(creationTime),
-          metadata,
-          null // No SPL token mint (using SOL)
+          [formData.category],
+          formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag)
         )
         .accounts({
           order: orderKeypair.publicKey,
           importer: publicKey,
           escrowPda,
-          systemProgram: web3.SystemProgram.programId,
+          systemProgram: SystemProgram.programId,
         })
         .signers([orderKeypair])
         .rpc();
 
-      console.log('Transaction signature:', tx);
+      console.log('Order created with signature:', tx);
 
-      // Create order object for UI
-      const newOrder = {
+      // Create order object for the frontend
+      const newOrder: Order = {
         id: orderKeypair.publicKey.toString(),
         title: formData.title,
-        description: formData.description,
-        category: formData.category,
-        tags: metadata.tags,
         amount: parseFloat(formData.amount),
         state: 'PendingDeadlineApproval',
         importer: publicKey.toString(),
         exporter: formData.exporterAddress,
         verifier: formData.verifierAddress,
-        createdAt: creationTime,
-        deadline: proposedDeadline,
+        createdAt: Math.floor(Date.now() / 1000),
+        deadline: Math.floor(deadlineMs / 1000),
+        description: formData.description,
+        category: formData.category,
+        tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag)
       };
 
       onOrderCreated(newOrder);
+      
     } catch (error) {
       console.error('Error creating order:', error);
       alert('Failed to create order: ' + (error as Error).message);

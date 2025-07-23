@@ -1,3 +1,5 @@
+import { ComponentType } from 'react';
+
 export interface Order {
   id: string;
   title: string;
@@ -28,6 +30,6 @@ export type UserRole = 'importer' | 'exporter' | 'verifier';
 export interface EscrowAction {
   id: string;
   label: string;
-  icon: React.ComponentType<any>;
+  icon: ComponentType<{ className?: string }>;
   color: 'green' | 'blue' | 'yellow' | 'red' | 'purple';
 }

@@ -16,8 +16,23 @@ import {
 import { CreateOrderModal } from './CreateOrderModal';
 import { OrdersList } from './OrdersList';
 import { OrderDetails } from './OrderDetails';
-import { Order as OrderType } from '@/types/escrow';
+import { Order as EscrowOrder } from '@/types/escrow';
 import { sampleOrders, getOrderStatistics } from '@/utils/sampleData';
+
+interface Order {
+  id: string;
+  title: string;
+  amount: number;
+  state: string;
+  importer: string;
+  exporter: string;
+  verifier: string;
+  createdAt: number;
+  deadline: number;
+  description: string;
+  category: string;
+  tags: string[];
+}
 
 interface Order {
   id: string;
@@ -142,7 +157,7 @@ export function EscrowDashboard() {
                   return (
                     <button
                       key={tab.id}
-                      onClick={() => setActiveTab(tab.id as any)}
+                      onClick={() => setActiveTab(tab.id as 'all' | 'importer' | 'exporter' | 'verifier')}
                       className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md ${
                         activeTab === tab.id
                           ? 'bg-blue-100 text-blue-700'
@@ -158,24 +173,35 @@ export function EscrowDashboard() {
 
               {/* Stats */}
               <div className="mt-8 border-t pt-6">
-                <h3 className="text-sm font-medium text-gray-500 mb-4">Statistics</h3>
+                <h3 className="text-sm font-medium text-gray-500 mb-4">Your Statistics</h3>
                 <div className="space-y-3">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Total Orders</span>
-                    <span className="font-medium">{orders.length}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Active</span>
-                    <span className="font-medium text-blue-600">
-                      {orders.filter(o => !['Completed', 'Refunded'].includes(o.state)).length}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Completed</span>
-                    <span className="font-medium text-green-600">
-                      {orders.filter(o => o.state === 'Completed').length}
-                    </span>
-                  </div>
+                  {publicKey && (() => {
+                    const stats = getOrderStatistics(orders, publicKey.toString());
+                    return (
+                      <>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Total Orders</span>
+                          <span className="font-medium">{stats.totalOrders}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Total Value</span>
+                          <span className="font-medium">{stats.totalValue.toFixed(1)} SOL</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Active</span>
+                          <span className="font-medium text-blue-600">{stats.activeOrders}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Completed</span>
+                          <span className="font-medium text-green-600">{stats.completedOrders}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Success Rate</span>
+                          <span className="font-medium">{stats.completionRate.toFixed(1)}%</span>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
