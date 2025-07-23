@@ -1,9 +1,9 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::system_instruction;
 use anchor_lang::solana_program::program::{invoke, invoke_signed};
-use anchor_spl::token::{self, Token, TokenAccount, Mint, Transfer};
+use anchor_spl::token::{self, Token, TokenAccount};
 
-declare_id!("9KUNonirg79qR5SeSGdG49XfQ1DXKkB8GZEVzsakuZcR");
+declare_id!("Fm9JpyaGRGJSqMFHr2d4Yg5pMFg9x1cQPGaV9GeGS1Nq");
 
 // Deadline range constants (in seconds)
 const MIN_DEADLINE: i64 = 60;           // 1 minute
@@ -576,8 +576,9 @@ pub mod escrow {
         }
         order.released_amount += amount;
         let now = Clock::get()?.unix_timestamp;
+        let current_state = order.state.clone();
         order.add_history_entry(
-            order.state.clone(),
+            current_state,
             format!("Partial release: {} units to exporter", amount),
             now,
         );
@@ -657,8 +658,9 @@ pub mod escrow {
         // If fully refunded/released, mark as refunded/completed
         if order.released_amount + order.refunded_amount == order.amount {
             order.state = if order.released_amount > 0 { OrderState::Completed } else { OrderState::Refunded };
+            let final_state = order.state.clone();
             order.add_history_entry(
-                order.state.clone(),
+                final_state,
                 "Order completed - all funds released/refunded".to_string(),
                 current_time,
             );
