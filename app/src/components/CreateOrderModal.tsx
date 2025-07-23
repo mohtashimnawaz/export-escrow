@@ -31,6 +31,24 @@ export function CreateOrderModal({ onClose, onOrderCreated }: CreateOrderModalPr
     deadlineHours: '0',
   });
 
+  const handleAirdrop = async () => {
+    if (!publicKey) {
+      error('Wallet Not Connected', 'Please connect your wallet first');
+      return;
+    }
+    try {
+      setLoading(true);
+      const signature = await connection.requestAirdrop(publicKey, 2 * LAMPORTS_PER_SOL);
+      await connection.confirmTransaction(signature, 'confirmed');
+      success('Airdrop Successful', 'Successfully airdropped 2 SOL to your account.');
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
+      error('Airdrop Failed', `Failed to airdrop SOL: ${errorMsg}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const getProgram = () => {
     if (!publicKey || !signTransaction || !signAllTransactions) return null;
     
@@ -179,6 +197,14 @@ export function CreateOrderModal({ onClose, onOrderCreated }: CreateOrderModalPr
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-gray-900">Create New Order</h2>
           <div className="flex items-center space-x-3">
+            <button
+              type="button"
+              onClick={handleAirdrop}
+              disabled={loading}
+              className="text-sm bg-green-100 hover:bg-green-200 text-green-700 px-3 py-1 rounded-md disabled:opacity-50"
+            >
+              Airdrop 2 SOL
+            </button>
             <button
               type="button"
               onClick={fillSampleData}

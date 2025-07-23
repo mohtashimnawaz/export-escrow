@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { WalletProvider } from "@/components/WalletProvider";
 import { NotificationProvider } from "@/components/Notifications";
+import { Background3D } from "@/components/3d/ThreeScene";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -19,9 +20,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.className} antialiased`}>
+        <Background3D />
         <NotificationProvider>
           <WalletProvider>
-            {children}
+            <div className="relative z-10">{children}</div>
           </WalletProvider>
         </NotificationProvider>
       </body>

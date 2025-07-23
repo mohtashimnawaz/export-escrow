@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useMemo, Suspense } from 'react';
+import React, { useMemo, useRef, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text, Float } from '@react-three/drei';
 import * as THREE from 'three';
@@ -74,6 +74,51 @@ const SceneContent = () => {
       ))}
       <OrbitControls />
     </>
+  );
+};
+
+const Particle = ({ position }: { position: THREE.Vector3 }) => {
+  const mesh = useRef<THREE.Mesh>(null!);
+  
+  useFrame((state) => {
+    const time = state.clock.getElapsedTime();
+    if(mesh.current) {
+        mesh.current.position.y = position.y + Math.sin(time + position.x) * 0.2;
+    }
+  });
+
+  return (
+    <mesh ref={mesh} position={position}>
+      <sphereGeometry args={[0.05, 16, 16]} />
+      <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={0.5} />
+    </mesh>
+  );
+};
+
+export const Background3D = () => {
+  const particleCount = 200;
+  const positions = useMemo(() => {
+    const pos = [];
+    for (let i = 0; i < particleCount; i++) {
+      pos.push([
+        (Math.random() - 0.5) * 30,
+        (Math.random() - 0.5) * 30,
+        (Math.random() - 0.5) * 30,
+      ]);
+    }
+    return pos;
+  }, [particleCount]);
+
+  return (
+    <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: -1 }}>
+      <Canvas camera={{ position: [0, 0, 5], fov: 75 }}>
+        <ambientLight intensity={0.1} />
+        <pointLight position={[10, 10, 10]} intensity={0.5} />
+        {positions.map((pos, i) => (
+          <Particle key={i} position={new THREE.Vector3(...pos)} />
+        ))}
+      </Canvas>
+    </div>
   );
 };
 

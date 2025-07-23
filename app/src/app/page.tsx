@@ -1,7 +1,6 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import Link from 'next/link';
 
 const EscrowDashboard = dynamic(
   () => import("../components/EscrowDashboard").then(mod => ({ default: mod.EscrowDashboard })),
@@ -20,12 +19,7 @@ const EscrowDashboard = dynamic(
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-gray-50">
-      <div className="p-4 text-center">
-        <Link href="/3d" className="text-lg bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors">
-          View 3D Experience
-        </Link>
-      </div>
+    <main className="min-h-screen">
       <EscrowDashboard />
     </main>
   );

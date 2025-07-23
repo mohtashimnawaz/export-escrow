@@ -123,9 +123,9 @@ export function EscrowDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-transparent">
       {/* Header */}
-      <div className="bg-white shadow">
+      <div className="bg-white/80 backdrop-blur-sm shadow sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
             <div className="flex items-center">
@@ -150,7 +150,7 @@ export function EscrowDashboard() {
         <div className="flex flex-col lg:flex-row gap-8">
           {/* Sidebar */}
           <div className="lg:w-64 flex-shrink-0">
-            <div className="bg-white rounded-lg shadow p-6">
+            <div className="bg-white/80 backdrop-blur-sm rounded-lg shadow p-6">
               <nav className="space-y-2">
                 {tabs.map((tab) => {
                   const Icon = tab.icon;
