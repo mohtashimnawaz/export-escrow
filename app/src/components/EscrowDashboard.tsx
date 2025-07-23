@@ -16,6 +16,8 @@ import {
 import { CreateOrderModal } from './CreateOrderModal';
 import { OrdersList } from './OrdersList';
 import { OrderDetails } from './OrderDetails';
+import { Order as OrderType } from '@/types/escrow';
+import { sampleOrders, getOrderStatistics } from '@/utils/sampleData';
 
 interface Order {
   id: string;
@@ -37,7 +39,7 @@ export function EscrowDashboard() {
   const [activeTab, setActiveTab] = useState<'all' | 'importer' | 'exporter' | 'verifier'>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<Order[]>(sampleOrders);
 
   const tabs = [
     { id: 'all', name: 'All Orders', icon: Package },
@@ -185,7 +187,7 @@ export function EscrowDashboard() {
               <OrderDetails 
                 order={selectedOrder} 
                 onBack={() => setSelectedOrder(null)}
-                onUpdate={(updatedOrder) => {
+                onUpdate={(updatedOrder: Order) => {
                   setOrders(orders.map(o => o.id === updatedOrder.id ? updatedOrder : o));
                   setSelectedOrder(updatedOrder);
                 }}
