@@ -39,9 +39,9 @@ export function CreateOrderModal({ onClose, onOrderCreated }: CreateOrderModalPr
     }
     try {
       setLoading(true);
-      const signature = await connection.requestAirdrop(publicKey, 2 * LAMPORTS_PER_SOL);
+      const signature = await connection.requestAirdrop(publicKey, 30 * LAMPORTS_PER_SOL);
       await connection.confirmTransaction(signature, 'confirmed');
-      success('Airdrop Successful', 'Successfully airdropped 2 SOL to your account.');
+      success('Airdrop Successful', 'Successfully airdropped 30 SOL to your account.');
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
       error('Airdrop Failed', `Failed to airdrop SOL: ${errorMsg}`);
