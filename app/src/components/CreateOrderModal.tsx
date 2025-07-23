@@ -8,6 +8,7 @@ import { X, User, Shield } from 'lucide-react';
 import { Order } from '@/types/escrow';
 import { useNotifications } from './Notifications';
 import escrowIdl from '@/idl/escrow.json';
+import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 
 interface CreateOrderModalProps {
   onClose: () => void;
@@ -151,11 +152,11 @@ export function CreateOrderModal({ onClose, onOrderCreated }: CreateOrderModalPr
           importer: publicKey,
           escrowPda,
           systemProgram: SystemProgram.programId,
-          // For SOL transfers, these are not used but may be required by Anchor
+          // For SOL transfers, these are not used but must be valid program IDs
           importerTokenAccount: SystemProgram.programId,
           escrowTokenAccount: SystemProgram.programId,
           tokenMint: SystemProgram.programId,
-          tokenProgram: SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
           rent: SystemProgram.programId,
         })
         .signers([orderKeypair])
