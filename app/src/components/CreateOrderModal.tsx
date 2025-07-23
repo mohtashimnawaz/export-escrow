@@ -110,17 +110,23 @@ export function CreateOrderModal({ onClose, onOrderCreated }: CreateOrderModalPr
       
       const amount = new BN(parseFloat(formData.amount) * LAMPORTS_PER_SOL);
       const deadline = new BN(Math.floor(deadlineMs / 1000));
+      const creation_time = new BN(Math.floor(Date.now() / 1000));
+      const metadata = {
+        title: formData.title,
+        description: formData.description,
+        tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
+        category: formData.category,
+      };
       
       const tx = await program.methods
         .createOrder(
-          formData.title,
-          formData.description,
-          amount,
-          deadline,
           new PublicKey(formData.exporterAddress),
           new PublicKey(formData.verifierAddress),
-          [formData.category],
-          formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag)
+          amount,
+          deadline,
+          creation_time,
+          metadata,
+          null
         )
         .accounts({
           order: orderKeypair.publicKey,
@@ -142,7 +148,7 @@ export function CreateOrderModal({ onClose, onOrderCreated }: CreateOrderModalPr
         importer: publicKey.toString(),
         exporter: formData.exporterAddress,
         verifier: formData.verifierAddress,
-        createdAt: Math.floor(Date.now() / 1000),
+        createdAt: creation_time.toNumber(),
         deadline: Math.floor(deadlineMs / 1000),
         description: formData.description,
         category: formData.category,

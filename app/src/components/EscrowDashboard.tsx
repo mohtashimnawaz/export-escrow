@@ -16,7 +16,6 @@ import {
 import { CreateOrderModal } from './CreateOrderModal';
 import { OrdersList } from './OrdersList';
 import { OrderDetails } from './OrderDetails';
-import { NotificationContainer, useNotifications } from './Notifications';
 import { Order as EscrowOrder } from '@/types/escrow';
 import { sampleOrders, getOrderStatistics } from '@/utils/sampleData';
 
@@ -52,7 +51,6 @@ interface Order {
 
 export function EscrowDashboard() {
   const { connected, publicKey } = useWallet();
-  const { notifications, removeNotification } = useNotifications();
   const [activeTab, setActiveTab] = useState<'all' | 'importer' | 'exporter' | 'verifier'>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -244,12 +242,6 @@ export function EscrowDashboard() {
           }}
         />
       )}
-
-      {/* Notifications */}
-      <NotificationContainer
-        notifications={notifications}
-        onClose={removeNotification}
-      />
     </div>
   );
 }
