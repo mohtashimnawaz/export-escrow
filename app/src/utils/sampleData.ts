@@ -6,9 +6,9 @@ export const sampleOrders: Order[] = [
     title: 'Electronics Components Import',
     amount: 25.5,
     state: 'InTransit',
-    importer: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM',
-    exporter: 'DfXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjb',
-    verifier: '4fYNw3dojWmQ3dTHTHNGrMGqaNi7k2mXpbXbPULBNsXb',
+    importer: 'Hzy81inT9z7YaKBkDxG58DYwGksoJNPQEr6REcFGHXkN',
+    exporter: 'Dbz2Y1yPtaJ6LiLtLujXoFokrnfGWoJYNREpdAcmrX7T',
+    verifier: 'HQo4Gy3XWnn4ZZYP6HEf5WnL3b8EEmL6mVP1ywekgQXK',
     createdAt: Date.now() / 1000 - 86400 * 3, // 3 days ago
     deadline: Date.now() / 1000 + 86400 * 14, // 14 days from now
     description: 'Import of electronic components including microcontrollers, sensors, and LED displays for manufacturing.',
@@ -20,9 +20,9 @@ export const sampleOrders: Order[] = [
     title: 'Textile Goods Export',
     amount: 15.0,
     state: 'PendingShipment',
-    importer: 'AaXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjc',
-    exporter: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM',
-    verifier: '4fYNw3dojWmQ3dTHTHNGrMGqaNi7k2mXpbXbPULBNsXb',
+    importer: 'HQo4Gy3XWnn4ZZYP6HEf5WnL3b8EEmL6mVP1ywekgQXK',
+    exporter: 'Hzy81inT9z7YaKBkDxG58DYwGksoJNPQEr6REcFGHXkN',
+    verifier: 'Dbz2Y1yPtaJ6LiLtLujXoFokrnfGWoJYNREpdAcmrX7T',
     createdAt: Date.now() / 1000 - 86400 * 5, // 5 days ago
     deadline: Date.now() / 1000 + 86400 * 21, // 21 days from now
     description: 'Export of premium cotton textiles and garments to European markets.',

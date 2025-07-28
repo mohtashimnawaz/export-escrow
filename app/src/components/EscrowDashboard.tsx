@@ -16,6 +16,7 @@ import {
 import { CreateOrderModal } from './CreateOrderModal';
 import { OrdersList } from './OrdersList';
 import { OrderDetails } from './OrderDetails';
+import { TestWalletHelper } from './TestWalletHelper';
 import { Order as EscrowOrder } from '@/types/escrow';
 import { sampleOrders, getOrderStatistics } from '@/utils/sampleData';
 
@@ -251,6 +252,8 @@ export function EscrowDashboard() {
           onOrderCreated={handleOrderCreated}
         />
       )}
+      
+      <TestWalletHelper />
     </div>
   );
 }
