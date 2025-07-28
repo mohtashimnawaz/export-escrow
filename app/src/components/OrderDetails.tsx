@@ -241,6 +241,13 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
       setShowModal(null);
       setModalData({});
       
+      // Show specific success message for confirm delivery
+      if (instruction === 'confirmDelivery') {
+        alert(`✅ Delivery confirmed successfully!\n\n• Order completed\n• ${order.amount} SOL released to exporter\n• Transaction recorded on blockchain\n• Transaction ID: ${tx.slice(0, 8)}...${tx.slice(-8)}`);
+      } else if (instruction === 'shipGoods') {
+        alert(`🚚 Goods shipped successfully!\n\n• Order is now in transit\n• Bill of lading recorded on blockchain\n• Transaction ID: ${tx.slice(0, 8)}...${tx.slice(-8)}`);
+      }
+      
     } catch (error) {
       console.error('Transaction error:', error);
       alert('Transaction failed: ' + (error as Error).message);
@@ -334,6 +341,7 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
             {showModal === 'resolveDispute' && 'Resolve Dispute'}
             {showModal === 'requestExtension' && 'Request Extension'}
             {showModal === 'shipGoods' && 'Confirm Shipment'}
+            {showModal === 'confirmDelivery' && 'Confirm Delivery'}
           </h3>
 
           {showModal === 'disputeOrder' && (
@@ -433,6 +441,54 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
             </div>
           )}
 
+          {showModal === 'confirmDelivery' && (
+            <div className="space-y-4">
+              <div className="bg-green-50 p-4 rounded-md">
+                <div className="flex items-start">
+                  <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 mr-3 flex-shrink-0" />
+                  <div>
+                    <h4 className="text-sm font-medium text-green-800 mb-1">
+                      Confirm Delivery Receipt
+                    </h4>
+                    <p className="text-sm text-green-700">
+                      By confirming delivery, you acknowledge that the goods have been received as described in the order.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 p-4 rounded-md">
+                <h4 className="text-sm font-medium text-blue-800 mb-2">
+                  📦 What happens next:
+                </h4>
+                <ul className="text-sm text-blue-700 space-y-1">
+                  <li>• Order status will change to "Completed"</li>
+                  <li>• Funds ({order.amount} SOL) will be released to the exporter</li>
+                  <li>• Transaction will be recorded on the blockchain</li>
+                  <li>• Order history will be updated</li>
+                </ul>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Delivery Notes (Optional)
+                </label>
+                <textarea
+                  placeholder="Any observations about the delivery condition, packaging, etc."
+                  value={(modalData.deliveryNotes as string) || ''}
+                  onChange={(e) => setModalData({ ...modalData, deliveryNotes: e.target.value })}
+                  className="w-full p-3 border rounded-md h-20 resize-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                />
+              </div>
+
+              <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-md">
+                <p className="text-sm text-yellow-800">
+                  <strong>⚠️ Important:</strong> This action cannot be undone. Only confirm if you have physically received the goods and they match the order description.
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="flex justify-end space-x-3 mt-6">
             <button
               onClick={() => setShowModal(null)}
@@ -443,9 +499,16 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
             <button
               onClick={handleModalSubmit}
               disabled={loading || (showModal === 'shipGoods' && (!(modalData.trackingNumber as string) || !(modalData.carrier as string)))}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+              className={`px-4 py-2 text-white rounded-md hover:opacity-90 disabled:opacity-50 ${
+                showModal === 'confirmDelivery' ? 'bg-green-600 hover:bg-green-700' : 
+                showModal === 'shipGoods' ? 'bg-blue-600 hover:bg-blue-700' : 
+                'bg-blue-600 hover:bg-blue-700'
+              }`}
             >
-              {loading ? 'Processing...' : showModal === 'shipGoods' ? 'Ship Goods' : 'Confirm'}
+              {loading ? 'Processing...' : 
+               showModal === 'shipGoods' ? 'Ship Goods' : 
+               showModal === 'confirmDelivery' ? 'Confirm Delivery & Release Funds' :
+               'Confirm'}
             </button>
           </div>
         </div>
