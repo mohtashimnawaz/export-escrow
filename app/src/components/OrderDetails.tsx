@@ -105,7 +105,25 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
           break;
 
         case 'shipGoods':
-          const billOfLadingHash = Array.from({ length: 32 }, () => Math.floor(Math.random() * 256));
+          // Generate a bill of lading hash based on shipment details
+          const shipmentData = {
+            trackingNumber: (modalData.trackingNumber as string) || '',
+            carrier: (modalData.carrier as string) || '',
+            estimatedDelivery: (modalData.estimatedDelivery as string) || '',
+            notes: (modalData.notes as string) || '',
+            timestamp: Date.now()
+          };
+          
+          // Create a deterministic hash from shipment data
+          const shipmentString = JSON.stringify(shipmentData);
+          const hash = new TextEncoder().encode(shipmentString);
+          
+          // Ensure we have exactly 32 bytes for the bill of lading hash
+          const billOfLadingHash = new Array(32).fill(0);
+          for (let i = 0; i < Math.min(hash.length, 32); i++) {
+            billOfLadingHash[i] = hash[i];
+          }
+          
           tx = await program.methods
             .shipGoods(billOfLadingHash)
             .accounts({
@@ -353,9 +371,66 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
           )}
 
           {showModal === 'shipGoods' && (
-            <p className="text-gray-600 mb-4">
-              Confirm that you have shipped the goods. A bill of lading hash will be generated automatically.
-            </p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Tracking Number <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter tracking number"
+                  value={(modalData.trackingNumber as string) || ''}
+                  onChange={(e) => setModalData({ ...modalData, trackingNumber: e.target.value })}
+                  className="w-full p-3 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Carrier/Shipping Company <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., DHL, FedEx, UPS"
+                  value={(modalData.carrier as string) || ''}
+                  onChange={(e) => setModalData({ ...modalData, carrier: e.target.value })}
+                  className="w-full p-3 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Estimated Delivery Date
+                </label>
+                <input
+                  type="date"
+                  value={(modalData.estimatedDelivery as string) || ''}
+                  onChange={(e) => setModalData({ ...modalData, estimatedDelivery: e.target.value })}
+                  className="w-full p-3 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Additional Notes (Optional)
+                </label>
+                <textarea
+                  placeholder="Any special handling instructions or notes"
+                  value={(modalData.notes as string) || ''}
+                  onChange={(e) => setModalData({ ...modalData, notes: e.target.value })}
+                  className="w-full p-3 border rounded-md h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div className="bg-blue-50 p-3 rounded-md">
+                <p className="text-sm text-blue-800">
+                  <strong>Note:</strong> Once confirmed, this will mark the order as "In Transit" and generate a bill of lading hash on the blockchain.
+                </p>
+              </div>
+              {(!(modalData.trackingNumber as string) || !(modalData.carrier as string)) && (
+                <p className="text-sm text-red-600">
+                  * Please fill in all required fields to proceed.
+                </p>
+              )}
+            </div>
           )}
 
           <div className="flex justify-end space-x-3 mt-6">
@@ -367,10 +442,10 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
             </button>
             <button
               onClick={handleModalSubmit}
-              disabled={loading}
+              disabled={loading || (showModal === 'shipGoods' && (!(modalData.trackingNumber as string) || !(modalData.carrier as string)))}
               className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
             >
-              {loading ? 'Processing...' : 'Confirm'}
+              {loading ? 'Processing...' : showModal === 'shipGoods' ? 'Ship Goods' : 'Confirm'}
             </button>
           </div>
         </div>
