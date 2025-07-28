@@ -174,7 +174,8 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
           break;
 
         case 'requestExtension':
-          const extensionDays = params.extensionDays as number;
+          const extensionDays = modalData.extensionDays as number;
+          const extensionReason = modalData.extensionReason as string;
           const newDeadline = new BN(Math.floor(Date.now() / 1000) + extensionDays * 24 * 60 * 60);
           tx = await program.methods
             .requestDeadlineExtension(newDeadline, new BN(Math.floor(Date.now() / 1000)))
@@ -241,11 +242,20 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
       setShowModal(null);
       setModalData({});
       
-      // Show specific success message for confirm delivery
-      if (instruction === 'confirmDelivery') {
-        alert(`✅ Delivery confirmed successfully!\n\n• Order completed\n• ${order.amount} SOL released to exporter\n• Transaction recorded on blockchain\n• Transaction ID: ${tx.slice(0, 8)}...${tx.slice(-8)}`);
-      } else if (instruction === 'shipGoods') {
-        alert(`🚚 Goods shipped successfully!\n\n• Order is now in transit\n• Bill of lading recorded on blockchain\n• Transaction ID: ${tx.slice(0, 8)}...${tx.slice(-8)}`);
+      // Show specific success messages
+      if (tx) {
+        if (instruction === 'confirmDelivery') {
+          alert(`✅ Delivery confirmed successfully!\n\n• Order completed\n• ${order.amount} SOL released to exporter\n• Transaction recorded on blockchain\n• Transaction ID: ${tx.slice(0, 8)}...${tx.slice(-8)}`);
+        } else if (instruction === 'shipGoods') {
+          alert(`🚚 Goods shipped successfully!\n\n• Order is now in transit\n• Bill of lading recorded on blockchain\n• Transaction ID: ${tx.slice(0, 8)}...${tx.slice(-8)}`);
+        } else if (instruction === 'requestExtension') {
+          const days = modalData.extensionDays as number;
+          alert(`⏰ Extension request submitted!\n\n• Requested ${days} additional days\n• Order paused pending importer approval\n• Transaction ID: ${tx.slice(0, 8)}...${tx.slice(-8)}`);
+        } else if (instruction === 'approveExtension') {
+          alert(`✅ Extension approved!\n\n• New deadline granted to exporter\n• Order resumed with extended timeline\n• Transaction ID: ${tx.slice(0, 8)}...${tx.slice(-8)}`);
+        } else if (instruction === 'rejectExtension') {
+          alert(`❌ Extension rejected!\n\n• Original deadline maintained\n• Order resumed with current timeline\n• Transaction ID: ${tx.slice(0, 8)}...${tx.slice(-8)}`);
+        }
       }
       
     } catch (error) {
@@ -342,6 +352,8 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
             {showModal === 'requestExtension' && 'Request Extension'}
             {showModal === 'shipGoods' && 'Confirm Shipment'}
             {showModal === 'confirmDelivery' && 'Confirm Delivery'}
+            {showModal === 'approveExtension' && 'Approve Extension Request'}
+            {showModal === 'rejectExtension' && 'Reject Extension Request'}
           </h3>
 
           {showModal === 'disputeOrder' && (
@@ -365,16 +377,77 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
           )}
 
           {showModal === 'requestExtension' && (
-            <div>
-              <label className="block text-sm font-medium mb-2">Extension Days</label>
-              <input
-                type="number"
-                min="1"
-                max="30"
-                value={(modalData.extensionDays as number) || ''}
-                onChange={(e) => setModalData({ ...modalData, extensionDays: parseInt(e.target.value) })}
-                className="w-full p-3 border rounded-md"
-              />
+            <div className="space-y-4">
+              <div className="bg-orange-50 p-4 rounded-md">
+                <div className="flex items-start">
+                  <Clock className="h-5 w-5 text-orange-600 mt-0.5 mr-3 flex-shrink-0" />
+                  <div>
+                    <h4 className="text-sm font-medium text-orange-800 mb-1">
+                      Request Deadline Extension
+                    </h4>
+                    <p className="text-sm text-orange-700">
+                      Request additional time from the importer to complete the order.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 p-4 rounded-md">
+                <h4 className="text-sm font-medium text-blue-800 mb-2">
+                  📅 Current Deadline:
+                </h4>
+                <p className="text-sm text-blue-700">
+                  {format(new Date(order.deadline * 1000), 'PPP')} at {format(new Date(order.deadline * 1000), 'p')}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Extension Days <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="60"
+                  placeholder="Number of additional days needed"
+                  value={(modalData.extensionDays as number) || ''}
+                  onChange={(e) => {
+                    const days = parseInt(e.target.value);
+                    setModalData({ ...modalData, extensionDays: days });
+                  }}
+                  className="w-full p-3 border rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                />
+                {(modalData.extensionDays as number) > 0 && (
+                  <p className="text-sm text-gray-600 mt-2">
+                    <strong>New deadline:</strong> {format(new Date((order.deadline + (modalData.extensionDays as number) * 24 * 60 * 60) * 1000), 'PPP')}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Reason for Extension <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  placeholder="Explain why additional time is needed (e.g., supply chain delays, customs issues, etc.)"
+                  value={(modalData.extensionReason as string) || ''}
+                  onChange={(e) => setModalData({ ...modalData, extensionReason: e.target.value })}
+                  className="w-full p-3 border rounded-md h-24 resize-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                  required
+                />
+              </div>
+
+              <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-md">
+                <p className="text-sm text-yellow-800">
+                  <strong>Note:</strong> The importer will review your request and can either approve or reject it. The order will be paused until a decision is made.
+                </p>
+              </div>
+
+              {(!(modalData.extensionDays as number) || !(modalData.extensionReason as string)) && (
+                <p className="text-sm text-red-600">
+                  * Please fill in all required fields to proceed.
+                </p>
+              )}
             </div>
           )}
 
@@ -489,6 +562,107 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
             </div>
           )}
 
+          {showModal === 'approveExtension' && (
+            <div className="space-y-4">
+              <div className="bg-green-50 p-4 rounded-md">
+                <div className="flex items-start">
+                  <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 mr-3 flex-shrink-0" />
+                  <div>
+                    <h4 className="text-sm font-medium text-green-800 mb-1">
+                      Approve Extension Request
+                    </h4>
+                    <p className="text-sm text-green-700">
+                      Grant the exporter additional time to complete the order.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 p-4 rounded-md">
+                <h4 className="text-sm font-medium text-blue-800 mb-2">
+                  📋 Extension Details:
+                </h4>
+                <ul className="text-sm text-blue-700 space-y-1">
+                  <li>• Current deadline: {format(new Date(order.deadline * 1000), 'PPP')}</li>
+                  <li>• Additional time requested: [Extension days will be shown from blockchain]</li>
+                  <li>• Reason: [Extension reason will be shown from blockchain]</li>
+                </ul>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Approval Notes (Optional)
+                </label>
+                <textarea
+                  placeholder="Any conditions or notes regarding the approval..."
+                  value={(modalData.approvalNotes as string) || ''}
+                  onChange={(e) => setModalData({ ...modalData, approvalNotes: e.target.value })}
+                  className="w-full p-3 border rounded-md h-20 resize-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                />
+              </div>
+
+              <div className="bg-green-50 border border-green-200 p-3 rounded-md">
+                <p className="text-sm text-green-800">
+                  <strong>✅ Approving:</strong> The new deadline will take effect immediately and the order will resume progress.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {showModal === 'rejectExtension' && (
+            <div className="space-y-4">
+              <div className="bg-red-50 p-4 rounded-md">
+                <div className="flex items-start">
+                  <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 mr-3 flex-shrink-0" />
+                  <div>
+                    <h4 className="text-sm font-medium text-red-800 mb-1">
+                      Reject Extension Request
+                    </h4>
+                    <p className="text-sm text-red-700">
+                      Decline the exporter's request for additional time.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 p-4 rounded-md">
+                <h4 className="text-sm font-medium text-blue-800 mb-2">
+                  📋 Extension Details:
+                </h4>
+                <ul className="text-sm text-blue-700 space-y-1">
+                  <li>• Current deadline: {format(new Date(order.deadline * 1000), 'PPP')}</li>
+                  <li>• Additional time requested: [Extension days will be shown from blockchain]</li>
+                  <li>• Reason: [Extension reason will be shown from blockchain]</li>
+                </ul>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Rejection Reason <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  placeholder="Explain why the extension request is being rejected..."
+                  value={(modalData.rejectionReason as string) || ''}
+                  onChange={(e) => setModalData({ ...modalData, rejectionReason: e.target.value })}
+                  className="w-full p-3 border rounded-md h-24 resize-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  required
+                />
+              </div>
+
+              <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-md">
+                <p className="text-sm text-yellow-800">
+                  <strong>⚠️ Note:</strong> Rejecting will maintain the original deadline. The exporter will need to complete the order within the current timeframe.
+                </p>
+              </div>
+
+              {!(modalData.rejectionReason as string) && (
+                <p className="text-sm text-red-600">
+                  * Please provide a reason for the rejection.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="flex justify-end space-x-3 mt-6">
             <button
               onClick={() => setShowModal(null)}
@@ -498,16 +672,25 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
             </button>
             <button
               onClick={handleModalSubmit}
-              disabled={loading || (showModal === 'shipGoods' && (!(modalData.trackingNumber as string) || !(modalData.carrier as string)))}
+              disabled={loading || 
+                       (showModal === 'shipGoods' && (!(modalData.trackingNumber as string) || !(modalData.carrier as string))) ||
+                       (showModal === 'requestExtension' && (!(modalData.extensionDays as number) || !(modalData.extensionReason as string))) ||
+                       (showModal === 'rejectExtension' && !(modalData.rejectionReason as string))}
               className={`px-4 py-2 text-white rounded-md hover:opacity-90 disabled:opacity-50 ${
                 showModal === 'confirmDelivery' ? 'bg-green-600 hover:bg-green-700' : 
                 showModal === 'shipGoods' ? 'bg-blue-600 hover:bg-blue-700' : 
+                showModal === 'requestExtension' ? 'bg-orange-600 hover:bg-orange-700' :
+                showModal === 'approveExtension' ? 'bg-green-600 hover:bg-green-700' :
+                showModal === 'rejectExtension' ? 'bg-red-600 hover:bg-red-700' :
                 'bg-blue-600 hover:bg-blue-700'
               }`}
             >
               {loading ? 'Processing...' : 
                showModal === 'shipGoods' ? 'Ship Goods' : 
                showModal === 'confirmDelivery' ? 'Confirm Delivery & Release Funds' :
+               showModal === 'requestExtension' ? 'Request Extension' :
+               showModal === 'approveExtension' ? 'Approve Extension' :
+               showModal === 'rejectExtension' ? 'Reject Extension' :
                'Confirm'}
             </button>
           </div>
@@ -656,7 +839,7 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
                     <button
                       key={action.id}
                       onClick={() => {
-                        if (['disputeOrder', 'resolveDispute', 'requestExtension', 'shipGoods'].includes(action.id)) {
+                        if (['disputeOrder', 'resolveDispute', 'requestExtension', 'shipGoods', 'confirmDelivery', 'approveExtension', 'rejectExtension'].includes(action.id)) {
                           setShowModal(action.id);
                         } else {
                           executeTransaction(action.id);

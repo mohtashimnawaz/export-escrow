@@ -66,7 +66,7 @@ export function TestWalletHelper() {
       </div>
 
       <div className="text-xs text-gray-600 mb-3">
-        Import these seed phrases into Phantom wallet to test different roles:
+        Import these seed phrases into Phantom wallet to test different features:
       </div>
 
       <div className="space-y-3 max-h-80 overflow-y-auto">
@@ -117,7 +117,10 @@ export function TestWalletHelper() {
       </div>
 
       <div className="mt-3 text-xs text-gray-500">
-        💡 Each account has 100 SOL for testing. Refresh page after switching wallets.
+        💡 Each account has 100 SOL. Test scenarios:
+        <br />• <strong>Importer:</strong> Confirm delivery (Electronics), Approve/Reject extension (Machinery)
+        <br />• <strong>Exporter:</strong> Ship goods (Textiles), Request extension (any PendingShipment)
+        <br />• <strong>Verifier:</strong> Confirm delivery (Electronics), Resolve disputes
       </div>
     </div>
   );

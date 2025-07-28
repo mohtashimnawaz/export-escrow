@@ -33,10 +33,10 @@ export const sampleOrders: Order[] = [
     id: 'CQsYmkQrWqxb8FnGpmVJBJd1YyuMpZHFe4xqGBWD9def',
     title: 'Machinery Parts Import',
     amount: 45.0,
-    state: 'PendingDeadlineApproval',
-    importer: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM',
-    exporter: 'GbXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjg',
-    verifier: '4fYNw3dojWmQ3dTHTHNGrMGqaNi7k2mXpbXbPULBNsXb',
+    state: 'PendingExtensionApproval',
+    importer: 'Hzy81inT9z7YaKBkDxG58DYwGksoJNPQEr6REcFGHXkN', // Test importer can approve/reject
+    exporter: 'Dbz2Y1yPtaJ6LiLtLujXoFokrnfGWoJYNREpdAcmrX7T', // Test exporter requested extension
+    verifier: 'HQo4Gy3XWnn4ZZYP6HEf5WnL3b8EEmL6mVP1ywekgQXK',
     createdAt: Date.now() / 1000 - 86400 * 1, // 1 day ago
     deadline: Date.now() / 1000 + 86400 * 30, // 30 days from now
     description: 'Import of specialized machinery parts for industrial equipment maintenance.',
