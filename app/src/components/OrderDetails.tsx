@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey, SystemProgram } from '@solana/web3.js';
 import { Program, AnchorProvider, BN } from '@coral-xyz/anchor';
@@ -15,30 +15,24 @@ import {
   CheckCircle,
   AlertTriangle,
   Calendar,
-  FileText
+  FileText,
+  Coins
 } from 'lucide-react';
 import { Order as EscrowOrder } from '@/types/escrow';
+import { TokenPriceService, TokenUtils } from '@/utils/tokenUtils';
 import escrowIdl from '@/idl/escrow.json';
 
 interface Order {
   id: string;
   title: string;
   amount: number;
-  state: string;
-  importer: string;
-  exporter: string;
-  verifier: string;
-  createdAt: number;
-  deadline: number;
-  description: string;
-  category: string;
-  tags: string[];
-}
-
-interface Order {
-  id: string;
-  title: string;
-  amount: number;
+  currency: {
+    mint: string;
+    symbol: string;
+    name: string;
+    decimals: number;
+    logoURI?: string;
+  };
   state: string;
   importer: string;
   exporter: string;
@@ -62,6 +56,18 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState<string | null>(null);
   const [modalData, setModalData] = useState<Record<string, unknown>>({});
+  const [tokenPrice, setTokenPrice] = useState<number>(0);
+
+  const tokenUtils = new TokenUtils(connection);
+
+  // Load token price
+  useEffect(() => {
+    const loadTokenPrice = async () => {
+      const price = await TokenPriceService.getTokenPrice(order.currency.mint);
+      setTokenPrice(price);
+    };
+    loadTokenPrice();
+  }, [order.currency.mint]);
 
   const getProgram = () => {
     if (!publicKey || !signTransaction || !signAllTransactions) return null;
@@ -269,7 +275,8 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
       // Show specific success messages
       if (tx) {
         if (instruction === 'confirmDelivery') {
-          alert(`✅ Delivery confirmed successfully!\n\n• Order completed\n• ${order.amount} SOL released to exporter\n• Transaction recorded on blockchain\n• Transaction ID: ${tx.slice(0, 8)}...${tx.slice(-8)}`);
+          const formattedAmount = tokenUtils.formatTokenAmount(order.amount, order.currency.decimals);
+          alert(`✅ Delivery confirmed successfully!\n\n• Order completed\n• ${formattedAmount} ${order.currency.symbol} released to exporter\n• Transaction recorded on blockchain\n• Transaction ID: ${tx.slice(0, 8)}...${tx.slice(-8)}`);
         } else if (instruction === 'shipGoods') {
           alert(`🚚 Goods shipped successfully!\n\n• Order is now in transit\n• Bill of lading recorded on blockchain\n• Transaction ID: ${tx.slice(0, 8)}...${tx.slice(-8)}`);
         } else if (instruction === 'requestExtension') {
@@ -492,7 +499,7 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
                   <li>• <strong>Type:</strong> [Dispute type will be shown from blockchain]</li>
                   <li>• <strong>Raised by:</strong> [Disputing party will be shown from blockchain]</li>
                   <li>• <strong>Date filed:</strong> [Dispute date will be shown from blockchain]</li>
-                  <li>• <strong>Order amount:</strong> {order.amount} SOL</li>
+                  <li>• <strong>Order amount:</strong> {tokenUtils.formatTokenAmount(order.amount, order.currency.decimals)} {order.currency.symbol}</li>
                 </ul>
               </div>
 
@@ -534,8 +541,8 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
                     </span>
                   </div>
                   <div className="mt-2 text-sm text-gray-600">
-                    <p>• Importer receives: {((modalData.refundPercentage as number) || 50)}% = {(order.amount * ((modalData.refundPercentage as number) || 50) / 100).toFixed(2)} SOL</p>
-                    <p>• Exporter receives: {100 - ((modalData.refundPercentage as number) || 50)}% = {(order.amount * (100 - ((modalData.refundPercentage as number) || 50)) / 100).toFixed(2)} SOL</p>
+                    <p>• Importer receives: {((modalData.refundPercentage as number) || 50)}% = {tokenUtils.formatTokenAmount((order.amount * ((modalData.refundPercentage as number) || 50)) / 100, order.currency.decimals)} {order.currency.symbol}</p>
+                    <p>• Exporter receives: {100 - ((modalData.refundPercentage as number) || 50)}% = {tokenUtils.formatTokenAmount((order.amount * (100 - ((modalData.refundPercentage as number) || 50))) / 100, order.currency.decimals)} {order.currency.symbol}</p>
                   </div>
                 </div>
               )}
@@ -559,19 +566,19 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
                 </h4>
                 <div className="text-sm text-green-700">
                   {(modalData.outcome as string) === 'favor_importer' && (
-                    <p>• <strong>Full refund:</strong> {order.amount} SOL returned to importer</p>
+                    <p>• <strong>Full refund:</strong> {tokenUtils.formatTokenAmount(order.amount, order.currency.decimals)} {order.currency.symbol} returned to importer</p>
                   )}
                   {(modalData.outcome as string) === 'favor_exporter' && (
-                    <p>• <strong>Full payment:</strong> {order.amount} SOL released to exporter</p>
+                    <p>• <strong>Full payment:</strong> {tokenUtils.formatTokenAmount(order.amount, order.currency.decimals)} {order.currency.symbol} released to exporter</p>
                   )}
                   {(modalData.outcome as string) === 'partial_refund' && (
                     <div>
-                      <p>• <strong>Importer:</strong> {(order.amount * ((modalData.refundPercentage as number) || 50) / 100).toFixed(2)} SOL</p>
-                      <p>• <strong>Exporter:</strong> {(order.amount * (100 - ((modalData.refundPercentage as number) || 50)) / 100).toFixed(2)} SOL</p>
+                      <p>• <strong>Importer:</strong> {tokenUtils.formatTokenAmount((order.amount * ((modalData.refundPercentage as number) || 50)) / 100, order.currency.decimals)} {order.currency.symbol}</p>
+                      <p>• <strong>Exporter:</strong> {tokenUtils.formatTokenAmount((order.amount * (100 - ((modalData.refundPercentage as number) || 50))) / 100, order.currency.decimals)} {order.currency.symbol}</p>
                     </div>
                   )}
                   {(modalData.outcome as string) === 'hold_escrow' && (
-                    <p>• <strong>Hold funds:</strong> {order.amount} SOL remains in escrow for review</p>
+                    <p>• <strong>Hold funds:</strong> {tokenUtils.formatTokenAmount(order.amount, order.currency.decimals)} {order.currency.symbol} remains in escrow for review</p>
                   )}
                 </div>
               </div>
@@ -750,7 +757,7 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
                 </h4>
                 <ul className="text-sm text-blue-700 space-y-1">
                   <li>• Order status will change to "Completed"</li>
-                  <li>• Funds ({order.amount} SOL) will be released to the exporter</li>
+                  <li>• Funds ({tokenUtils.formatTokenAmount(order.amount, order.currency.decimals)} {order.currency.symbol}) will be released to the exporter</li>
                   <li>• Transaction will be recorded on the blockchain</li>
                   <li>• Order history will be updated</li>
                 </ul>
@@ -940,8 +947,26 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
           </div>
           
           <div className="text-right">
-            <div className="text-2xl font-bold text-gray-900">{order.amount} SOL</div>
-            <div className="text-sm text-gray-500">≈ ${(order.amount * 150).toFixed(2)} USD</div>
+            <div className="flex items-center justify-end mb-1">
+              {order.currency.logoURI && (
+                <img 
+                  src={order.currency.logoURI} 
+                  alt={order.currency.symbol}
+                  className="h-6 w-6 rounded-full mr-2"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              )}
+              <div className="text-2xl font-bold text-gray-900">
+                {tokenUtils.formatTokenAmount(order.amount, order.currency.decimals)} {order.currency.symbol}
+              </div>
+            </div>
+            {tokenPrice > 0 && (
+              <div className="text-sm text-gray-500">
+                ≈ ${(order.amount * tokenPrice / Math.pow(10, order.currency.decimals)).toFixed(2)} USD
+              </div>
+            )}
           </div>
         </div>
       </div>

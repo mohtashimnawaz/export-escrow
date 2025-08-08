@@ -4,6 +4,13 @@ export interface Order {
   id: string;
   title: string;
   amount: number;
+  currency: {
+    mint: string;
+    symbol: string;
+    name: string;
+    decimals: number;
+    logoURI?: string;
+  };
   state: string;
   importer: string;
   exporter: string;

@@ -1,10 +1,18 @@
 import { Order } from '@/types/escrow';
+import { SOL_TOKEN, POPULAR_TOKENS } from './tokenUtils';
 
 export const sampleOrders: Order[] = [
   {
     id: 'FQsYmkQrWqxb8FnGpmVJBJd1YyuMpZHFe4xqGBWD9xrb',
     title: 'Electronics Components Import',
-    amount: 25.5,
+    amount: 25500, // 25,500 USDC
+    currency: {
+      mint: POPULAR_TOKENS[0].mint, // USDC
+      symbol: POPULAR_TOKENS[0].symbol,
+      name: POPULAR_TOKENS[0].name,
+      decimals: POPULAR_TOKENS[0].decimals,
+      logoURI: POPULAR_TOKENS[0].logoURI,
+    },
     state: 'InTransit',
     importer: 'Hzy81inT9z7YaKBkDxG58DYwGksoJNPQEr6REcFGHXkN',
     exporter: 'Dbz2Y1yPtaJ6LiLtLujXoFokrnfGWoJYNREpdAcmrX7T',
@@ -18,7 +26,14 @@ export const sampleOrders: Order[] = [
   {
     id: 'BQsYmkQrWqxb8FnGpmVJBJd1YyuMpZHFe4xqGBWD9abc',
     title: 'Textile Goods Export',
-    amount: 15.0,
+    amount: 15.0, // 15 SOL
+    currency: {
+      mint: SOL_TOKEN.mint,
+      symbol: SOL_TOKEN.symbol,
+      name: SOL_TOKEN.name,
+      decimals: SOL_TOKEN.decimals,
+      logoURI: SOL_TOKEN.logoURI,
+    },
     state: 'PendingShipment',
     importer: 'HQo4Gy3XWnn4ZZYP6HEf5WnL3b8EEmL6mVP1ywekgQXK',
     exporter: 'Hzy81inT9z7YaKBkDxG58DYwGksoJNPQEr6REcFGHXkN',
@@ -32,7 +47,14 @@ export const sampleOrders: Order[] = [
   {
     id: 'CQsYmkQrWqxb8FnGpmVJBJd1YyuMpZHFe4xqGBWD9def',
     title: 'Machinery Parts Import',
-    amount: 45.0,
+    amount: 45000, // 45,000 USDT
+    currency: {
+      mint: POPULAR_TOKENS[1].mint, // USDT
+      symbol: POPULAR_TOKENS[1].symbol,
+      name: POPULAR_TOKENS[1].name,
+      decimals: POPULAR_TOKENS[1].decimals,
+      logoURI: POPULAR_TOKENS[1].logoURI,
+    },
     state: 'PendingExtensionApproval',
     importer: 'Hzy81inT9z7YaKBkDxG58DYwGksoJNPQEr6REcFGHXkN', // Test importer can approve/reject
     exporter: 'Dbz2Y1yPtaJ6LiLtLujXoFokrnfGWoJYNREpdAcmrX7T', // Test exporter requested extension
@@ -46,7 +68,14 @@ export const sampleOrders: Order[] = [
   {
     id: 'DQsYmkQrWqxb8FnGpmVJBJd1YyuMpZHFe4xqGBWD9ghi',
     title: 'Food Products Export',
-    amount: 12.8,
+    amount: 15120000000, // 151.2M BONK
+    currency: {
+      mint: POPULAR_TOKENS[3].mint, // BONK
+      symbol: POPULAR_TOKENS[3].symbol,
+      name: POPULAR_TOKENS[3].name,
+      decimals: POPULAR_TOKENS[3].decimals,
+      logoURI: POPULAR_TOKENS[3].logoURI,
+    },
     state: 'Completed',
     importer: 'HcXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjh',
     exporter: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM',
@@ -60,7 +89,14 @@ export const sampleOrders: Order[] = [
   {
     id: 'EQsYmkQrWqxb8FnGpmVJBJd1YyuMpZHFe4xqGBWD9jkl',
     title: 'Chemical Imports',
-    amount: 35.2,
+    amount: 425.0, // 425 JUP
+    currency: {
+      mint: POPULAR_TOKENS[4].mint, // JUP
+      symbol: POPULAR_TOKENS[4].symbol,
+      name: POPULAR_TOKENS[4].name,
+      decimals: POPULAR_TOKENS[4].decimals,
+      logoURI: POPULAR_TOKENS[4].logoURI,
+    },
     state: 'Disputed',
     importer: 'Dbz2Y1yPtaJ6LiLtLujXoFokrnfGWoJYNREpdAcmrX7T', // Test importer who filed dispute
     exporter: 'Hzy81inT9z7YaKBkDxG58DYwGksoJNPQEr6REcFGHXkN', // Test exporter being disputed

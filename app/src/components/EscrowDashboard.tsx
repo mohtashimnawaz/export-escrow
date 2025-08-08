@@ -19,26 +19,19 @@ import { OrderDetails } from './OrderDetails';
 import { TestWalletHelper } from './TestWalletHelper';
 import { Order as EscrowOrder } from '@/types/escrow';
 import { sampleOrders, getOrderStatistics } from '@/utils/sampleData';
+import { TokenUtils, TokenPriceService } from '@/utils/tokenUtils';
 
 interface Order {
   id: string;
   title: string;
   amount: number;
-  state: string;
-  importer: string;
-  exporter: string;
-  verifier: string;
-  createdAt: number;
-  deadline: number;
-  description: string;
-  category: string;
-  tags: string[];
-}
-
-interface Order {
-  id: string;
-  title: string;
-  amount: number;
+  currency: {
+    mint: string;
+    symbol: string;
+    name: string;
+    decimals: number;
+    logoURI?: string;
+  };
   state: string;
   importer: string;
   exporter: string;

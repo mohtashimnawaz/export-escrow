@@ -4,9 +4,11 @@ import React, { useState } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey, Keypair, SystemProgram, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { Program, AnchorProvider, BN } from '@coral-xyz/anchor';
-import { X, User, Shield } from 'lucide-react';
+import { X, User, Shield, Coins } from 'lucide-react';
 import { Order } from '@/types/escrow';
 import { useNotifications } from './Notifications';
+import { TokenSelector } from './TokenSelector';
+import { TokenInfo, SOL_TOKEN, TokenUtils, TokenPriceService } from '@/utils/tokenUtils';
 import escrowIdl from '@/idl/escrow.json';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 
@@ -20,6 +22,7 @@ export function CreateOrderModal({ onClose, onOrderCreated }: CreateOrderModalPr
   const { publicKey, signTransaction, signAllTransactions } = useWallet();
   const [loading, setLoading] = useState(false);
   const { success, error } = useNotifications();
+  const [selectedToken, setSelectedToken] = useState<TokenInfo>(SOL_TOKEN);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -31,6 +34,8 @@ export function CreateOrderModal({ onClose, onOrderCreated }: CreateOrderModalPr
     deadlineDays: '7',
     deadlineHours: '0',
   });
+
+  const tokenUtils = new TokenUtils(connection);
 
   const handleAirdrop = async () => {
     if (!publicKey) {
@@ -127,7 +132,9 @@ export function CreateOrderModal({ onClose, onOrderCreated }: CreateOrderModalPr
         (parseInt(formData.deadlineDays) * 24 * 60 * 60 * 1000) + 
         (parseInt(formData.deadlineHours) * 60 * 60 * 1000);
       
-      const amount = new BN(parseFloat(formData.amount) * LAMPORTS_PER_SOL);
+      // Convert amount to token's base units
+      const amountInBaseUnits = parseFloat(formData.amount) * Math.pow(10, selectedToken.decimals);
+      const amount = new BN(amountInBaseUnits);
       const deadline = new BN(Math.floor(deadlineMs / 1000));
       const creation_time = new BN(Math.floor(Date.now() / 1000));
       const metadata = {
@@ -161,7 +168,14 @@ export function CreateOrderModal({ onClose, onOrderCreated }: CreateOrderModalPr
       const newOrder: Order = {
         id: orderKeypair.publicKey.toString(),
         title: formData.title,
-        amount: parseFloat(formData.amount),
+        amount: amountInBaseUnits,
+        currency: {
+          mint: selectedToken.mint,
+          symbol: selectedToken.symbol,
+          name: selectedToken.name,
+          decimals: selectedToken.decimals,
+          logoURI: selectedToken.logoURI,
+        },
         state: 'PendingDeadlineApproval',
         importer: publicKey.toString(),
         exporter: formData.exporterAddress,
@@ -327,24 +341,45 @@ export function CreateOrderModal({ onClose, onOrderCreated }: CreateOrderModalPr
             </div>
           </div>
 
-          {/* Amount and Deadline */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Amount (SOL) *
-              </label>
-              <input
-                type="number"
-                required
-                step="0.001"
-                min="0"
-                value={formData.amount}
-                onChange={(e) => setFormData({...formData, amount: e.target.value})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="0.0"
-              />
-            </div>
+          {/* Token and Amount */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium text-gray-900 flex items-center">
+              <Coins className="h-5 w-5 mr-2" />
+              Payment Details
+            </h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Token *
+                </label>
+                <TokenSelector
+                  selectedToken={selectedToken}
+                  onTokenSelect={setSelectedToken}
+                  showBalance={true}
+                />
+              </div>
 
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Amount ({selectedToken.symbol}) *
+                </label>
+                <input
+                  type="number"
+                  required
+                  step="any"
+                  min="0"
+                  value={formData.amount}
+                  onChange={(e) => setFormData({...formData, amount: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder={`Amount in ${selectedToken.symbol}`}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Deadline */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Deadline (Days) *
