@@ -16,11 +16,38 @@ import {
   AlertTriangle,
   Calendar,
   FileText,
-  Coins
+  Coins,
+  DollarSign,
+  Target
 } from 'lucide-react';
 import { Order as EscrowOrder } from '@/types/escrow';
 import { TokenPriceService, TokenUtils } from '@/utils/tokenUtils';
+import { PaymentScheduleModal } from '@/components/PaymentScheduleModalSimple';
+import { MilestoneManagementModal } from '@/components/MilestoneManagementModalSimple';
 import escrowIdl from '@/idl/escrow.json';
+
+interface PaymentMilestone {
+  id: string;
+  title: string;
+  description: string;
+  amount: number;
+  percentage: number;
+  status: 'pending' | 'submitted' | 'approved' | 'paid' | 'disputed' | 'cancelled';
+  conditions: string[];
+  dueDate?: Date;
+  paidAt?: number;
+  transactionId?: string;
+}
+
+interface PaymentSchedule {
+  id: string;
+  orderId: string;
+  totalAmount: number;
+  currency: string;
+  milestones: PaymentMilestone[];
+  createdAt: number;
+  updatedAt: number;
+}
 
 interface Order {
   id: string;
@@ -57,6 +84,11 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
   const [showModal, setShowModal] = useState<string | null>(null);
   const [modalData, setModalData] = useState<Record<string, unknown>>({});
   const [tokenPrice, setTokenPrice] = useState<number>(0);
+  
+  // Payment scheduling state
+  const [showPaymentSchedule, setShowPaymentSchedule] = useState(false);
+  const [showMilestoneManagement, setShowMilestoneManagement] = useState(false);
+  const [paymentSchedule, setPaymentSchedule] = useState<PaymentSchedule | null>(null);
 
   const tokenUtils = new TokenUtils(connection);
 
@@ -354,6 +386,25 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
     // Common actions
     if (!['Completed', 'Refunded'].includes(order.state) && userRole) {
       actions.push({ id: 'disputeOrder', label: 'Dispute Order', icon: AlertTriangle, color: 'red' });
+    }
+
+    // Payment scheduling actions
+    if ((userRole === 'importer' || userRole === 'exporter') && !['Completed', 'Refunded', 'Disputed'].includes(order.state)) {
+      if (!paymentSchedule) {
+        actions.push({ 
+          id: 'createPaymentSchedule', 
+          label: 'Create Payment Schedule', 
+          icon: DollarSign, 
+          color: 'blue' 
+        });
+      } else {
+        actions.push({ 
+          id: 'manageMilestones', 
+          label: 'Manage Milestones', 
+          icon: Target, 
+          color: 'green' 
+        });
+      }
     }
 
     return actions;
@@ -1062,6 +1113,110 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
                 </div>
               </div>
             </div>
+
+            {/* Payment Schedule Section */}
+            {paymentSchedule && (
+              <div className="bg-gray-50 rounded-lg p-6">
+                <h2 className="text-lg font-semibold mb-4 flex items-center">
+                  <Target className="h-5 w-5 mr-2" />
+                  Payment Schedule
+                </h2>
+                
+                {/* Progress Overview */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                  <div className="text-center p-4 bg-white rounded-lg border">
+                    <div className="text-2xl font-bold text-blue-600">{paymentSchedule.milestones.length}</div>
+                    <div className="text-sm text-gray-600">Milestones</div>
+                  </div>
+                  <div className="text-center p-4 bg-white rounded-lg border">
+                    <div className="text-2xl font-bold text-green-600">
+                      {paymentSchedule.milestones.filter(m => m.status === 'paid').length}
+                    </div>
+                    <div className="text-sm text-gray-600">Completed</div>
+                  </div>
+                  <div className="text-center p-4 bg-white rounded-lg border">
+                    <div className="text-2xl font-bold text-purple-600 flex items-center justify-center">
+                      {order.currency.logoURI && (
+                        <img src={order.currency.logoURI} alt={order.currency.symbol} className="h-6 w-6 mr-1" />
+                      )}
+                      {tokenUtils.formatTokenAmount(
+                        paymentSchedule.milestones
+                          .filter(m => m.status === 'paid')
+                          .reduce((sum, m) => sum + m.amount, 0),
+                        order.currency.decimals
+                      )}
+                    </div>
+                    <div className="text-sm text-gray-600">Paid</div>
+                  </div>
+                  <div className="text-center p-4 bg-white rounded-lg border">
+                    <div className="text-2xl font-bold text-orange-600">
+                      {Math.round((paymentSchedule.milestones.filter(m => m.status === 'paid').length / paymentSchedule.milestones.length) * 100)}%
+                    </div>
+                    <div className="text-sm text-gray-600">Progress</div>
+                  </div>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="mb-4">
+                  <div className="flex justify-between text-sm text-gray-600 mb-1">
+                    <span>Overall Progress</span>
+                    <span>
+                      {Math.round((paymentSchedule.milestones.filter(m => m.status === 'paid').length / paymentSchedule.milestones.length) * 100)}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div 
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+                      style={{ 
+                        width: `${(paymentSchedule.milestones.filter(m => m.status === 'paid').length / paymentSchedule.milestones.length) * 100}%` 
+                      }}
+                    ></div>
+                  </div>
+                </div>
+
+                {/* Milestone List */}
+                <div className="space-y-3">
+                  {paymentSchedule.milestones.map((milestone, index) => {
+                    const getStatusColor = (status: string) => {
+                      switch (status) {
+                        case 'pending': return 'text-yellow-600 bg-yellow-50 border-yellow-200';
+                        case 'submitted': return 'text-blue-600 bg-blue-50 border-blue-200';
+                        case 'approved': return 'text-green-600 bg-green-50 border-green-200';
+                        case 'paid': return 'text-purple-600 bg-purple-50 border-purple-200';
+                        case 'disputed': return 'text-red-600 bg-red-50 border-red-200';
+                        default: return 'text-gray-600 bg-gray-50 border-gray-200';
+                      }
+                    };
+
+                    return (
+                      <div key={milestone.id} className="bg-white border rounded-lg p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-2">
+                              <span className="text-sm font-medium text-gray-500">#{index + 1}</span>
+                              <h4 className="font-medium text-gray-900">{milestone.title}</h4>
+                              <div className={`px-2 py-1 rounded text-xs font-medium border ${getStatusColor(milestone.status)}`}>
+                                {milestone.status.charAt(0).toUpperCase() + milestone.status.slice(1)}
+                              </div>
+                            </div>
+                            <p className="text-sm text-gray-600 mt-1">{milestone.description}</p>
+                          </div>
+                          <div className="text-right">
+                            <div className="flex items-center text-lg font-bold text-gray-900">
+                              {order.currency.logoURI && (
+                                <img src={order.currency.logoURI} alt={order.currency.symbol} className="h-5 w-5 mr-1" />
+                              )}
+                              {tokenUtils.formatTokenAmount(milestone.amount, order.currency.decimals)} {order.currency.symbol}
+                            </div>
+                            <div className="text-sm text-gray-500">{milestone.percentage}%</div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Actions Sidebar */}
@@ -1086,6 +1241,10 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
                       onClick={() => {
                         if (['disputeOrder', 'resolveDispute', 'requestExtension', 'shipGoods', 'confirmDelivery', 'approveExtension', 'rejectExtension'].includes(action.id)) {
                           setShowModal(action.id);
+                        } else if (action.id === 'createPaymentSchedule') {
+                          setShowPaymentSchedule(true);
+                        } else if (action.id === 'manageMilestones') {
+                          setShowMilestoneManagement(true);
                         } else {
                           executeTransaction(action.id);
                         }
@@ -1142,6 +1301,50 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
       </div>
 
       {renderModal()}
+
+      {/* Payment Schedule Modal */}
+      <PaymentScheduleModal
+        isOpen={showPaymentSchedule}
+        onClose={() => setShowPaymentSchedule(false)}
+        order={order}
+        onScheduleCreated={setPaymentSchedule}
+      />
+
+      {/* Milestone Management Modal */}
+      {paymentSchedule && (
+        <MilestoneManagementModal
+          isOpen={showMilestoneManagement}
+          onClose={() => setShowMilestoneManagement(false)}
+          order={order}
+          schedule={paymentSchedule}
+          userRole={getCurrentUserRole() === 'importer' ? 'buyer' : getCurrentUserRole() === 'exporter' ? 'seller' : 'arbiter'}
+          onMilestoneUpdate={(milestoneId: string, action: string) => {
+            if (paymentSchedule) {
+              const updatedSchedule = { ...paymentSchedule };
+              const milestone = updatedSchedule.milestones.find(m => m.id === milestoneId);
+              if (milestone) {
+                switch (action) {
+                  case 'submit':
+                    milestone.status = 'submitted';
+                    break;
+                  case 'approve':
+                    milestone.status = 'approved';
+                    break;
+                  case 'pay':
+                    milestone.status = 'paid';
+                    milestone.paidAt = Date.now() / 1000;
+                    break;
+                  case 'dispute':
+                    milestone.status = 'disputed';
+                    break;
+                }
+                updatedSchedule.updatedAt = Date.now() / 1000;
+                setPaymentSchedule(updatedSchedule);
+              }
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
