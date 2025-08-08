@@ -62,14 +62,14 @@ export const sampleOrders: Order[] = [
     title: 'Chemical Imports',
     amount: 35.2,
     state: 'Disputed',
-    importer: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM',
-    exporter: 'IdXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXji',
-    verifier: '4fYNw3dojWmQ3dTHTHNGrMGqaNi7k2mXpbXbPULBNsXb',
+    importer: 'Dbz2Y1yPtaJ6LiLtLujXoFokrnfGWoJYNREpdAcmrX7T', // Test importer who filed dispute
+    exporter: 'Hzy81inT9z7YaKBkDxG58DYwGksoJNPQEr6REcFGHXkN', // Test exporter being disputed
+    verifier: 'HQo4Gy3XWnn4ZZYP6HEf5WnL3b8EEmL6mVP1ywekgQXK', // Test verifier can resolve
     createdAt: Date.now() / 1000 - 86400 * 8, // 8 days ago
     deadline: Date.now() / 1000 + 86400 * 7, // 7 days from now
-    description: 'Import of industrial chemicals for pharmaceutical manufacturing.',
+    description: 'Import of industrial chemicals for pharmaceutical manufacturing. Dispute filed due to damaged packaging and contaminated products.',
     category: 'chemicals',
-    tags: ['hazardous', 'controlled', 'pharmaceutical']
+    tags: ['hazardous', 'controlled', 'pharmaceutical', 'disputed']
   }
 ];
 

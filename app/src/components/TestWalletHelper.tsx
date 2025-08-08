@@ -118,9 +118,10 @@ export function TestWalletHelper() {
 
       <div className="mt-3 text-xs text-gray-500">
         💡 Each account has 100 SOL. Test scenarios:
-        <br />• <strong>Importer:</strong> Confirm delivery (Electronics), Approve/Reject extension (Machinery)
-        <br />• <strong>Exporter:</strong> Ship goods (Textiles), Request extension (any PendingShipment)
-        <br />• <strong>Verifier:</strong> Confirm delivery (Electronics), Resolve disputes
+        <br />• <strong>Importer:</strong> Confirm delivery (Electronics), Approve/Reject extension (Machinery), Dispute orders (any active)
+        <br />• <strong>Exporter:</strong> Ship goods (Textiles), Request extension (any PendingShipment), Dispute orders (any active)
+        <br />• <strong>Verifier:</strong> Confirm delivery (Electronics), Resolve dispute (Chemical Imports), Dispute orders (any active)
+        <br />• <strong>All roles:</strong> Can file disputes on orders they participate in
       </div>
     </div>
   );

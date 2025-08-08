@@ -134,7 +134,7 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
           break;
 
         case 'confirmDelivery':
-          const [escrowPda] = PublicKey.findProgramAddressSync(
+          const [confirmEscrowPda] = PublicKey.findProgramAddressSync(
             [Buffer.from('escrow_pda'), orderPubkey.toBuffer()],
             program.programId
           );
@@ -144,7 +144,7 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
             .accounts({
               order: orderPubkey,
               signer: publicKey,
-              escrowPda,
+              escrowPda: confirmEscrowPda,
               exporter: new PublicKey(order.exporter),
               systemProgram: SystemProgram.programId,
             })
@@ -152,7 +152,8 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
           break;
 
         case 'disputeOrder':
-          const reason = params.reason as string;
+          const reason = modalData.disputeReason as string;
+          const disputeType = modalData.disputeType as string;
           tx = await program.methods
             .disputeOrder(reason, new BN(Math.floor(Date.now() / 1000)))
             .accounts({
@@ -163,12 +164,35 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
           break;
 
         case 'resolveDispute':
-          const resolution = params.resolution as string;
+          const resolution = modalData.resolution as string;
+          const outcome = modalData.outcome as string;
+          
+          // Determine fund distribution based on outcome
+          let fundDistribution = '';
+          if (outcome === 'favor_importer') {
+            fundDistribution = 'refund_to_importer';
+          } else if (outcome === 'favor_exporter') {
+            fundDistribution = 'release_to_exporter';
+          } else if (outcome === 'partial_refund') {
+            fundDistribution = `partial_${modalData.refundPercentage || 50}`;
+          } else {
+            fundDistribution = 'hold_in_escrow';
+          }
+          
+          const [resolveEscrowPda] = PublicKey.findProgramAddressSync(
+            [Buffer.from('escrow_pda'), orderPubkey.toBuffer()],
+            program.programId
+          );
+          
           tx = await program.methods
             .resolveDispute(resolution, new BN(Math.floor(Date.now() / 1000)))
             .accounts({
               order: orderPubkey,
               verifier: publicKey,
+              escrowPda: resolveEscrowPda,
+              importer: new PublicKey(order.importer),
+              exporter: new PublicKey(order.exporter),
+              systemProgram: SystemProgram.programId,
             })
             .rpc();
           break;
@@ -255,6 +279,16 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
           alert(`✅ Extension approved!\n\n• New deadline granted to exporter\n• Order resumed with extended timeline\n• Transaction ID: ${tx.slice(0, 8)}...${tx.slice(-8)}`);
         } else if (instruction === 'rejectExtension') {
           alert(`❌ Extension rejected!\n\n• Original deadline maintained\n• Order resumed with current timeline\n• Transaction ID: ${tx.slice(0, 8)}...${tx.slice(-8)}`);
+        } else if (instruction === 'disputeOrder') {
+          const disputeType = modalData.disputeType as string;
+          alert(`⚠️ Dispute raised successfully!\n\n• Dispute type: ${disputeType}\n• Order paused pending verifier review\n• Verifier will investigate and resolve\n• Transaction ID: ${tx.slice(0, 8)}...${tx.slice(-8)}`);
+        } else if (instruction === 'resolveDispute') {
+          const outcome = modalData.outcome as string;
+          const outcomeText = outcome === 'favor_importer' ? 'In favor of Importer (Full refund)' : 
+                             outcome === 'favor_exporter' ? 'In favor of Exporter (Release funds)' :
+                             outcome === 'partial_refund' ? `Partial refund (${modalData.refundPercentage || 50}% to importer)` :
+                             'Hold funds in escrow';
+          alert(`⚖️ Dispute resolved!\n\n• Resolution: ${outcomeText}\n• Funds distributed according to decision\n• Order marked as completed\n• Transaction ID: ${tx.slice(0, 8)}...${tx.slice(-8)}`);
         }
       }
       
@@ -357,23 +391,203 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
           </h3>
 
           {showModal === 'disputeOrder' && (
-            <textarea
-              placeholder="Reason for dispute..."
-              value={(modalData.reason as string) || ''}
-              onChange={(e) => setModalData({ ...modalData, reason: e.target.value })}
-              className="w-full p-3 border rounded-md"
-              rows={4}
-            />
+            <div className="space-y-4">
+              <div className="bg-red-50 p-4 rounded-md">
+                <div className="flex items-start">
+                  <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 mr-3 flex-shrink-0" />
+                  <div>
+                    <h4 className="text-sm font-medium text-red-800 mb-1">
+                      Raise Dispute
+                    </h4>
+                    <p className="text-sm text-red-700">
+                      Report an issue with this order. A verifier will review and resolve the dispute.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Dispute Type <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={(modalData.disputeType as string) || ''}
+                  onChange={(e) => setModalData({ ...modalData, disputeType: e.target.value })}
+                  className="w-full p-3 border rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  required
+                >
+                  <option value="">Select dispute type...</option>
+                  <option value="goods_not_received">Goods Not Received</option>
+                  <option value="goods_damaged">Goods Damaged/Defective</option>
+                  <option value="wrong_goods">Wrong Goods Received</option>
+                  <option value="late_delivery">Late Delivery</option>
+                  <option value="quality_issues">Quality Not as Described</option>
+                  <option value="shipping_issues">Shipping/Handling Problems</option>
+                  <option value="communication_issues">Communication Problems</option>
+                  <option value="payment_issues">Payment/Documentation Issues</option>
+                  <option value="other">Other Issues</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Detailed Description <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  placeholder="Provide detailed information about the issue, including dates, evidence, and any attempts to resolve..."
+                  value={(modalData.disputeReason as string) || ''}
+                  onChange={(e) => setModalData({ ...modalData, disputeReason: e.target.value })}
+                  className="w-full p-3 border rounded-md h-32 resize-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Supporting Evidence (Optional)
+                </label>
+                <textarea
+                  placeholder="Links to photos, documents, tracking information, or other evidence..."
+                  value={(modalData.evidence as string) || ''}
+                  onChange={(e) => setModalData({ ...modalData, evidence: e.target.value })}
+                  className="w-full p-3 border rounded-md h-20 resize-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                />
+              </div>
+
+              <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-md">
+                <p className="text-sm text-yellow-800">
+                  <strong>⚠️ Important:</strong> Filing a dispute will pause the order and notify all parties. The verifier will review the case and make a binding decision on fund distribution.
+                </p>
+              </div>
+
+              {(!(modalData.disputeType as string) || !(modalData.disputeReason as string)) && (
+                <p className="text-sm text-red-600">
+                  * Please fill in all required fields to proceed.
+                </p>
+              )}
+            </div>
           )}
 
           {showModal === 'resolveDispute' && (
-            <textarea
-              placeholder="Resolution details..."
-              value={(modalData.resolution as string) || ''}
-              onChange={(e) => setModalData({ ...modalData, resolution: e.target.value })}
-              className="w-full p-3 border rounded-md"
-              rows={4}
-            />
+            <div className="space-y-4">
+              <div className="bg-purple-50 p-4 rounded-md">
+                <div className="flex items-start">
+                  <Shield className="h-5 w-5 text-purple-600 mt-0.5 mr-3 flex-shrink-0" />
+                  <div>
+                    <h4 className="text-sm font-medium text-purple-800 mb-1">
+                      Resolve Dispute
+                    </h4>
+                    <p className="text-sm text-purple-700">
+                      Review the dispute details and make a binding decision on how to resolve it.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 p-4 rounded-md">
+                <h4 className="text-sm font-medium text-blue-800 mb-2">
+                  📋 Dispute Information:
+                </h4>
+                <ul className="text-sm text-blue-700 space-y-1">
+                  <li>• <strong>Type:</strong> [Dispute type will be shown from blockchain]</li>
+                  <li>• <strong>Raised by:</strong> [Disputing party will be shown from blockchain]</li>
+                  <li>• <strong>Date filed:</strong> [Dispute date will be shown from blockchain]</li>
+                  <li>• <strong>Order amount:</strong> {order.amount} SOL</li>
+                </ul>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Resolution Decision <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={(modalData.outcome as string) || ''}
+                  onChange={(e) => setModalData({ ...modalData, outcome: e.target.value })}
+                  className="w-full p-3 border rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  required
+                >
+                  <option value="">Select resolution outcome...</option>
+                  <option value="favor_importer">Favor Importer (Full Refund)</option>
+                  <option value="favor_exporter">Favor Exporter (Release Full Payment)</option>
+                  <option value="partial_refund">Partial Refund to Importer</option>
+                  <option value="hold_escrow">Hold Funds for Further Review</option>
+                </select>
+              </div>
+
+              {(modalData.outcome as string) === 'partial_refund' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Refund Percentage to Importer <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex items-center space-x-3">
+                    <input
+                      type="range"
+                      min="10"
+                      max="90"
+                      step="10"
+                      value={(modalData.refundPercentage as number) || 50}
+                      onChange={(e) => setModalData({ ...modalData, refundPercentage: parseInt(e.target.value) })}
+                      className="flex-1"
+                    />
+                    <span className="text-sm font-medium w-16 text-center">
+                      {(modalData.refundPercentage as number) || 50}%
+                    </span>
+                  </div>
+                  <div className="mt-2 text-sm text-gray-600">
+                    <p>• Importer receives: {((modalData.refundPercentage as number) || 50)}% = {(order.amount * ((modalData.refundPercentage as number) || 50) / 100).toFixed(2)} SOL</p>
+                    <p>• Exporter receives: {100 - ((modalData.refundPercentage as number) || 50)}% = {(order.amount * (100 - ((modalData.refundPercentage as number) || 50)) / 100).toFixed(2)} SOL</p>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Resolution Details <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  placeholder="Explain your decision, reasoning, and any conditions or recommendations..."
+                  value={(modalData.resolution as string) || ''}
+                  onChange={(e) => setModalData({ ...modalData, resolution: e.target.value })}
+                  className="w-full p-3 border rounded-md h-32 resize-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  required
+                />
+              </div>
+
+              <div className="bg-green-50 border border-green-200 p-4 rounded-md">
+                <h4 className="text-sm font-medium text-green-800 mb-2">
+                  💰 Fund Distribution Preview:
+                </h4>
+                <div className="text-sm text-green-700">
+                  {(modalData.outcome as string) === 'favor_importer' && (
+                    <p>• <strong>Full refund:</strong> {order.amount} SOL returned to importer</p>
+                  )}
+                  {(modalData.outcome as string) === 'favor_exporter' && (
+                    <p>• <strong>Full payment:</strong> {order.amount} SOL released to exporter</p>
+                  )}
+                  {(modalData.outcome as string) === 'partial_refund' && (
+                    <div>
+                      <p>• <strong>Importer:</strong> {(order.amount * ((modalData.refundPercentage as number) || 50) / 100).toFixed(2)} SOL</p>
+                      <p>• <strong>Exporter:</strong> {(order.amount * (100 - ((modalData.refundPercentage as number) || 50)) / 100).toFixed(2)} SOL</p>
+                    </div>
+                  )}
+                  {(modalData.outcome as string) === 'hold_escrow' && (
+                    <p>• <strong>Hold funds:</strong> {order.amount} SOL remains in escrow for review</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-red-50 border border-red-200 p-3 rounded-md">
+                <p className="text-sm text-red-800">
+                  <strong>⚖️ Important:</strong> This decision is final and binding. Funds will be distributed immediately according to your resolution.
+                </p>
+              </div>
+
+              {(!(modalData.outcome as string) || !(modalData.resolution as string)) && (
+                <p className="text-sm text-red-600">
+                  * Please fill in all required fields to proceed.
+                </p>
+              )}
+            </div>
           )}
 
           {showModal === 'requestExtension' && (
@@ -675,13 +889,17 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
               disabled={loading || 
                        (showModal === 'shipGoods' && (!(modalData.trackingNumber as string) || !(modalData.carrier as string))) ||
                        (showModal === 'requestExtension' && (!(modalData.extensionDays as number) || !(modalData.extensionReason as string))) ||
-                       (showModal === 'rejectExtension' && !(modalData.rejectionReason as string))}
+                       (showModal === 'rejectExtension' && !(modalData.rejectionReason as string)) ||
+                       (showModal === 'disputeOrder' && (!(modalData.disputeType as string) || !(modalData.disputeReason as string))) ||
+                       (showModal === 'resolveDispute' && (!(modalData.outcome as string) || !(modalData.resolution as string)))}
               className={`px-4 py-2 text-white rounded-md hover:opacity-90 disabled:opacity-50 ${
                 showModal === 'confirmDelivery' ? 'bg-green-600 hover:bg-green-700' : 
                 showModal === 'shipGoods' ? 'bg-blue-600 hover:bg-blue-700' : 
                 showModal === 'requestExtension' ? 'bg-orange-600 hover:bg-orange-700' :
                 showModal === 'approveExtension' ? 'bg-green-600 hover:bg-green-700' :
                 showModal === 'rejectExtension' ? 'bg-red-600 hover:bg-red-700' :
+                showModal === 'disputeOrder' ? 'bg-red-600 hover:bg-red-700' :
+                showModal === 'resolveDispute' ? 'bg-purple-600 hover:bg-purple-700' :
                 'bg-blue-600 hover:bg-blue-700'
               }`}
             >
@@ -691,6 +909,8 @@ export function OrderDetails({ order, onBack, onUpdate }: OrderDetailsProps) {
                showModal === 'requestExtension' ? 'Request Extension' :
                showModal === 'approveExtension' ? 'Approve Extension' :
                showModal === 'rejectExtension' ? 'Reject Extension' :
+               showModal === 'disputeOrder' ? 'File Dispute' :
+               showModal === 'resolveDispute' ? 'Resolve Dispute' :
                'Confirm'}
             </button>
           </div>
