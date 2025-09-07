@@ -11,6 +11,7 @@ import { ToastProvider, useToast, LoadingState } from './ui/ToastSystem';
 import { CreateOrderModal } from './CreateOrderModal';
 import { OrderDetails } from './OrderDetails';
 import { TestWalletHelper } from './TestWalletHelper';
+import { LivePriceTicker, PriceDisplay } from './PriceComponents';
 import { sampleOrders, getOrderStatistics } from '@/utils/sampleData';
 
 interface Order {
@@ -320,6 +321,17 @@ function DashboardContent() {
         </button>
       }
     >
+      {/* Live Price Ticker */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium text-gray-900">Live Prices</h3>
+          <span className="text-xs text-gray-500">Updated every 30 seconds</span>
+        </div>
+        <div className="mt-3">
+          <LivePriceTicker />
+        </div>
+      </div>
+
       {/* Dashboard Stats */}
       <DashboardStats stats={stats} />
 
