@@ -11,7 +11,7 @@ import { ToastProvider, useToast, LoadingState } from './ui/ToastSystem';
 import { CreateOrderModal } from './CreateOrderModal';
 import { OrderDetails } from './OrderDetails';
 import { TestWalletHelper } from './TestWalletHelper';
-import { LivePriceTicker, PriceDisplay } from './PriceComponents';
+import { LivePriceTicker } from './PriceComponents';
 import { sampleOrders, getOrderStatistics } from '@/utils/sampleData';
 
 interface Order {
@@ -291,11 +291,17 @@ function DashboardContent() {
         }
       >
         <div className="bg-white rounded-xl shadow-lg p-6">
-          <OrderDetails 
-            order={selectedOrder} 
-            onBack={() => setSelectedOrder(null)}
-            onUpdate={handleOrderAction}
-          />
+          <div className="text-center p-8">
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Order Details</h2>
+            <p className="text-gray-600">Order ID: {selectedOrder.id}</p>
+            <p className="text-gray-600">Title: {selectedOrder.title}</p>
+            <button 
+              onClick={() => setSelectedOrder(null)}
+              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Back to Dashboard
+            </button>
+          </div>
         </div>
       </PageLayout>
     );
@@ -381,25 +387,42 @@ function DashboardContent() {
             </div>
           </div>
           
-          <OrderGrid 
-            orders={enhancedOrders.filter(order => {
-              // Role-based filtering
-              let matchesRole = true;
-              if (activeTab === 'importer') matchesRole = order.buyer === publicKey?.toString();
-              else if (activeTab === 'exporter') matchesRole = order.seller === publicKey?.toString();
-              else if (activeTab === 'verifier') matchesRole = false; // Add verifier logic here
-              
-              // Search filtering
-              const matchesSearch = searchTerm === '' || 
-                order.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                order.buyer.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                order.seller.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                order.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                order.description.toLowerCase().includes(searchTerm.toLowerCase());
-              
-              return matchesRole && matchesSearch;
-            })}
-          />
+          <div className="bg-white rounded-xl shadow-lg p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Orders</h3>
+            <div className="space-y-4">
+              {enhancedOrders.filter(order => {
+                // Role-based filtering
+                let matchesRole = true;
+                if (activeTab === 'importer') matchesRole = order.buyer === publicKey?.toString();
+                else if (activeTab === 'exporter') matchesRole = order.seller === publicKey?.toString();
+                else if (activeTab === 'verifier') matchesRole = false; // Add verifier logic here
+                
+                // Search filtering
+                const matchesSearch = searchTerm === '' || 
+                  order.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  order.buyer.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  order.seller.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  order.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  order.description.toLowerCase().includes(searchTerm.toLowerCase());
+                
+                return matchesRole && matchesSearch;
+              }).map(order => (
+                <div key={order.id} className="border border-gray-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-gray-900">{order.title}</h4>
+                  <p className="text-gray-600 text-sm">{order.description}</p>
+                  <div className="mt-2 flex items-center justify-between">
+                    <span className="text-lg font-bold">{order.amount} {order.token.symbol}</span>
+                    <button
+                      onClick={() => setSelectedOrder(orders.find(o => o.id === order.id) || null)}
+                      className="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    >
+                      View Details
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Sidebar */}

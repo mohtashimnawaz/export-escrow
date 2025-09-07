@@ -1,32 +1,23 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useWallet } from '@solana/wallet-adapter-react';
-import { Homepage } from '../components/Homepage';
 
 const EscrowDashboard = dynamic(
-  () => import("../components/EnhancedEscrowDashboard").then(mod => ({ default: mod.EnhancedEscrowDashboard })),
+  () => import("../../components/EnhancedEscrowDashboard").then(mod => ({ default: mod.EnhancedEscrowDashboard })),
   { 
     ssr: false,
     loading: () => (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading Escrow System...</p>
+          <p className="text-gray-600">Loading Dashboard...</p>
         </div>
       </div>
     )
   }
 );
 
-export default function Home() {
-  const { connected } = useWallet();
-
-  // Show homepage for non-connected users, dashboard for connected users
-  if (!connected) {
-    return <Homepage />;
-  }
-
+export default function DashboardPage() {
   return (
     <main className="min-h-screen">
       <EscrowDashboard />

@@ -26,24 +26,38 @@ export const PriceDisplay: React.FC<PriceDisplayProps> = ({
     );
   }
 
-  const tokenPrice = getPrice(token);
-  const usdValue = getUSDValue(amount, token);
+  try {
+    const tokenPrice = getPrice(token);
+    const usdValue = getUSDValue(amount, token);
 
-  return (
-    <div className={className}>
-      <div className="font-semibold text-gray-900">
-        {amount} {token}
+    return (
+      <div className={className}>
+        <div className="font-semibold text-gray-900">
+          {amount} {token}
+        </div>
+        <div className="text-sm text-gray-500 flex items-center gap-1">
+          {formatUSD(usdValue)}
+          {showChange && tokenPrice > 0 && (
+            <span className="text-xs text-gray-400">
+              @ {formatPrice(tokenPrice)}
+            </span>
+          )}
+        </div>
       </div>
-      <div className="text-sm text-gray-500 flex items-center gap-1">
-        {formatUSD(usdValue)}
-        {showChange && tokenPrice > 0 && (
-          <span className="text-xs text-gray-400">
-            @ {formatPrice(tokenPrice)}
-          </span>
-        )}
+    );
+  } catch (error) {
+    console.error('Error rendering PriceDisplay:', error);
+    return (
+      <div className={className}>
+        <div className="font-semibold text-gray-900">
+          {amount} {token}
+        </div>
+        <div className="text-sm text-gray-500">
+          Loading price...
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
 };
 
 interface LivePriceTickerProps {
