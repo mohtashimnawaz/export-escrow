@@ -131,13 +131,25 @@ export const EnhancedOrderCard: React.FC<EnhancedOrderCardProps> = ({ order }) =
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-3">
             <div className="relative">
-              <Image
-                src={order.token.logo}
-                alt={order.token.name}
-                width={32}
-                height={32}
-                className="rounded-full"
-              />
+              {order.token.logo ? (
+                <Image
+                  src={order.token.logo}
+                  alt={order.token.name}
+                  width={32}
+                  height={32}
+                  className="rounded-full"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                  }}
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                  <span className="text-white text-sm font-bold">
+                    {order.token.symbol?.charAt(0) || 'T'}
+                  </span>
+                </div>
+              )}
             </div>
             <div>
               <p className="text-xl font-bold text-gray-900">

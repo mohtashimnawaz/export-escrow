@@ -6,12 +6,13 @@ import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { Plus, Package } from 'lucide-react';
 import { PageLayout } from './ui/ModernLayout';
 import { DashboardStats, RecentActivity, TokenDistribution } from './ui/DashboardComponents';
-import { OrderGrid } from './ui/EnhancedOrderCard';
+import { OrderGrid } from '../../components/ui/EnhancedOrderCard';
 import { ToastProvider, useToast, LoadingState } from './ui/ToastSystem';
 import { CreateOrderModal } from './CreateOrderModal';
 import { OrderDetails } from './OrderDetails';
 import { TestWalletHelper } from './TestWalletHelper';
 import { LivePriceTicker } from './PriceComponents';
+import { ErrorBoundary } from './ErrorBoundary';
 import { sampleOrders, getOrderStatistics } from '@/utils/sampleData';
 
 interface Order {
@@ -334,7 +335,13 @@ function DashboardContent() {
           <span className="text-xs text-gray-500">Updated every 30 seconds</span>
         </div>
         <div className="mt-3">
-          <LivePriceTicker />
+          <ErrorBoundary fallback={
+            <div className="text-center py-4 text-gray-500">
+              Price data temporarily unavailable
+            </div>
+          }>
+            <LivePriceTicker />
+          </ErrorBoundary>
         </div>
       </div>
 
@@ -387,10 +394,9 @@ function DashboardContent() {
             </div>
           </div>
           
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Orders</h3>
-            <div className="space-y-4">
-              {enhancedOrders.filter(order => {
+          {(() => {
+            try {
+              const filteredOrders = enhancedOrders.filter(order => {
                 // Role-based filtering
                 let matchesRole = true;
                 if (activeTab === 'importer') matchesRole = order.buyer === publicKey?.toString();
@@ -406,23 +412,32 @@ function DashboardContent() {
                   order.description.toLowerCase().includes(searchTerm.toLowerCase());
                 
                 return matchesRole && matchesSearch;
-              }).map(order => (
-                <div key={order.id} className="border border-gray-200 rounded-lg p-4">
-                  <h4 className="font-semibold text-gray-900">{order.title}</h4>
-                  <p className="text-gray-600 text-sm">{order.description}</p>
-                  <div className="mt-2 flex items-center justify-between">
-                    <span className="text-lg font-bold">{order.amount} {order.token.symbol}</span>
-                    <button
-                      onClick={() => setSelectedOrder(orders.find(o => o.id === order.id) || null)}
-                      className="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                    >
-                      View Details
-                    </button>
+              });
+
+              return (
+                <ErrorBoundary fallback={
+                  <div className="bg-white rounded-xl shadow-lg p-6">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Orders</h3>
+                    <div className="text-center py-8">
+                      <p className="text-gray-500">Orders temporarily unavailable</p>
+                    </div>
+                  </div>
+                }>
+                  <OrderGrid orders={filteredOrders} />
+                </ErrorBoundary>
+              );
+            } catch (error) {
+              console.error('Error rendering OrderGrid:', error);
+              return (
+                <div className="bg-white rounded-xl shadow-lg p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Orders</h3>
+                  <div className="text-center py-8">
+                    <p className="text-gray-500">Error loading orders. Please refresh the page.</p>
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
+              );
+            }
+          })()}
         </div>
 
         {/* Sidebar */}
